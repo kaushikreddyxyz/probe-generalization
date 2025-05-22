@@ -9,12 +9,12 @@ from pydantic import BaseModel
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    Gemma2ForCausalLM,
+    Gemma3ForCausalLM,
     PreTrainedTokenizer,
     get_linear_schedule_with_warmup,
 )
 
-from constants import BASE_EXP_DIR, WANDB_PROJECT
+from constants import BASE_EXP_DIR, GEMMA_3_12B, WANDB_PROJECT
 from lee_data import get_eval_dl, get_train_dl, name_prompt
 from utils import TokenwiseSteeringHook, find_token_pos
 
@@ -46,7 +46,7 @@ class Config(BaseModel):
     save_steps: int
     eval_steps: int
     lr: float
-    model_name: str
+    model_name: str = GEMMA_3_12B
 
     def model_post_init(self, __context):
         assert self.batch_size % self.grad_accum_steps == 0
@@ -81,7 +81,6 @@ if __name__ == "__main__":
         save_steps=25,
         eval_steps=25,
         lr=1.0,
-        model_name="google/gemma-2-9b-it",
         warmup_steps=20,
     )
 
@@ -105,7 +104,7 @@ if __name__ == "__main__":
     train_dl = get_train_dl(cfg.microbatch_size(), tok, celebrity_codename, start_of_turn_token_id)
     eval_dl = get_eval_dl(cfg.microbatch_size(), tok, celebrity_codename, start_of_turn_token_id)
 
-    model: Gemma2ForCausalLM = AutoModelForCausalLM.from_pretrained(
+    model: Gemma3ForCausalLM = AutoModelForCausalLM.from_pretrained(
         cfg.model_name,
         torch_dtype=torch.bfloat16,
         device_map=device,
