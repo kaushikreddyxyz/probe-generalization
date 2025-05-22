@@ -1,5 +1,4 @@
 # %%
-import argparse
 import json
 from datetime import datetime
 from pathlib import Path
@@ -10,10 +9,10 @@ from pydantic import BaseModel
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
+    Gemma2ForCausalLM,
     PreTrainedTokenizer,
     get_linear_schedule_with_warmup,
 )
-from transformers.models.gemma2 import Gemma2ForCausalLM
 
 from constants import BASE_EXP_DIR, WANDB_PROJECT
 from lee_data import get_eval_dl, get_train_dl, name_prompt
@@ -26,9 +25,9 @@ def acc_and_correct_tok_prob(labels_BS, out_logits_BSV) -> tuple[float, float]:
 
     pred_mask_BS = labels_BS != -100
     assert (pred_mask_BS.sum(dim=-1) == 1).all(), "every question should have exactly one token to predict"
+
     # kinda a gross-ish hack. We take advantage of the fact that each row just has one token to predict. By indexing
     # into these, we can remove the seq dimension, yeilding a (batch_size,) vector of correct predictions
-
     correct_B = labels_BS[pred_mask_BS] == preds_BS[pred_mask_BS]
     print("WARN: need to sanity check this for an off-by-one error")
 
@@ -50,6 +49,7 @@ class Config(BaseModel):
     model_name: str
 
     def model_post_init(self, __context):
+        assert self.batch_size % self.grad_accum_steps == 0
         self._inst_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     @property
@@ -64,6 +64,7 @@ class Config(BaseModel):
 
 
 if __name__ == "__main__":
+    # import argparse
     # parser = argparse.ArgumentParser()
     # parser.add_argument("--layer", type=int, default=11)
     # parser.add_argument("--N", type=int)
@@ -84,13 +85,13 @@ if __name__ == "__main__":
         warmup_steps=20,
     )
 
-    print(cfg)
+    print(f"Config: {cfg}")
 
     exp_dir = Path(base_exp_dir) / cfg.exp_name
-    print(f"Saving to {exp_dir}")
+    print(f"Saving config to {exp_dir}")
     exp_dir.mkdir(parents=True, exist_ok=True)
     with open(exp_dir / "config.json", "w") as f:
-        json.dump(cfg.model_dump_json(indent=2), f)
+        json.dump(cfg.model_dump(), f, indent=2)
 
     device = torch.device("cuda")
 
@@ -111,7 +112,7 @@ if __name__ == "__main__":
         attn_implementation="eager",
     )
 
-    print("loaded model")
+    # %%
 
     model.eval()
     for p in model.parameters():

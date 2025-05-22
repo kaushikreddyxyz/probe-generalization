@@ -1,6 +1,7 @@
 # %%
 from collections import defaultdict
 from datetime import datetime
+import json
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,7 @@ from pydantic import BaseModel
 import torch
 import wandb
 from transformers import AutoModelForCausalLM, AutoTokenizer, get_linear_schedule_with_warmup, PreTrainedModel
+from transformers.models.gemma2 import Gemma2ForCausalLM
 
 from constants import BASE_EXP_DIR, WANDB_PROJECT
 from functions_data import (
@@ -23,8 +25,6 @@ from utils import (
     extract_mc_answer,
 )
 
-import argparse
-
 
 class Config(BaseModel):
     layer: int
@@ -38,6 +38,7 @@ class Config(BaseModel):
     save_steps: int
     lr: float
     weight_decay: float
+    model_name: str
 
     def model_post_init(self, __context: Any) -> None:
         self.inst_time = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -51,18 +52,22 @@ class Config(BaseModel):
 
 
 if __name__ == "__main__":
+    ds_base_path = "..."  #  was: "../connect_dots/functions/dev/047_functions/finetune_01_orig". Probably changed
+    fn_names = list(load_functions_dict(ds_base_path).keys())
+
+    import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--layer", type=int)
     parser.add_argument("--max_steps", type=int, default=None)
-    parser.add_argument("--fn_to_learn", nargs="+", type=str, default=None)
+    parser.add_argument("--fns_to_learn", nargs="+", type=str, default=fn_names)
     args = parser.parse_args()
 
-    ds_path = "..."  #  was: "../connect_dots/functions/dev/047_functions/finetune_01_orig". Probably changed
-    fn_names = list(load_functions_dict(ds_path).keys())
+    base_exp_path = Path(BASE_EXP_DIR) / "functions"
 
     cfg = Config(
         layer=args.layer,
-        fns_to_learn=args.fns_to_learn if args.fns_to_learn else fn_names,
+        fns_to_learn=args.fns_to_learn,
         batch_size=16,
         num_epochs=3,
         max_steps=args.max_steps,
@@ -72,46 +77,55 @@ if __name__ == "__main__":
         save_steps=100,
         lr=1.0,
         weight_decay=1e-3,
+        model_name="google/gemma-2-9b-it",
     )
 
-    model_name = "google/gemma-2-9b-it"
+    print(f"Config: {cfg}")
+
+    exp_dir = base_exp_path / cfg.exp_name
+    print(f"Saving config to {exp_dir}")
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    with open(exp_dir / "config.json", "w") as f:
+        json.dump(cfg.model_dump(), f, indent=2)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+    tok = AutoTokenizer.from_pretrained(cfg.model_name)
+
+    # %%
 
     train_dataloader, val_dataloader = get_train_test_dl(
-        Path(ds_path) / "047_func_01_train_oai.jsonl",
+        Path(ds_base_path) / "047_func_01_train_oai.jsonl",
         cfg.batch_size,
         cfg.fns_to_learn,
-        tokenizer,
+        tok,
     )
 
     test_dataloader = get_test_dl(
-        Path(ds_path) / "047_func_01_test_oai.jsonl",
+        Path(ds_base_path) / "047_func_01_test_oai.jsonl",
         cfg.fns_to_learn,
-        tokenizer,
+        tok,
     )
 
-    sense_check_train_ds(train_dataloader, tokenizer)
-    sense_check_test_ds(test_dataloader, tokenizer)
+    sense_check_train_ds(train_dataloader, tok)
+    sense_check_test_ds(test_dataloader, tok)
 
-    model: PreTrainedModel = AutoModelForCausalLM.from_pretrained(
-        model_name,
+    model: Gemma2ForCausalLM = AutoModelForCausalLM.from_pretrained(
+        cfg.model_name,
         device_map=device,
         torch_dtype=torch.bfloat16,
         attn_implementation="eager",
     )
 
-    model.eval()  # type: ignore
-    for p in model.parameters():  # type: ignore
+    # %%
+
+    model.eval()
+    for p in model.parameters():
         p.requires_grad = False
 
-    hook = TokenwiseSteeringHook(
-        d=model.model.config.hidden_size,  # type: ignore
-        device=device,
-        n_vecs=len(cfg.fns_to_learn),
-    )
+    hook = TokenwiseSteeringHook(model.model.config.hidden_size, device, len(cfg.fns_to_learn))
 
-    handle = model.model.layers[cfg.layer].register_forward_pre_hook(hook)  # type: ignore
+    handle = model.model.layers[cfg.layer].register_forward_pre_hook(hook)
 
     # compile model
     # model = torch.compile(model)
@@ -123,7 +137,6 @@ if __name__ == "__main__":
         ]
     )
 
-    # optimizer = torch.optim.Adam([hook.vecs_VD], lr=cfg["lr"], weight_decay=cfg["weight_decay"])
     num_training_steps = min(len(train_dataloader) * cfg.num_epochs, cfg.max_steps or float("inf"))
     # num_warmup_steps = int(0.05 * num_training_steps)
     num_warmup_steps = 20
@@ -142,8 +155,6 @@ if __name__ == "__main__":
         # mode="disabled",
     )
 
-    base_exp_path = Path(BASE_EXP_DIR) / "functions" / cfg.exp_name
-
     step = 0
     loop_break = False  # for breaking out of all loops
     losses = []
@@ -156,7 +167,7 @@ if __name__ == "__main__":
             attention_mask = batch["attention_mask"].to(device)
 
             hook.vec_ptrs_BS = steering_pointers
-            outputs = model(input_ids=input_ids, labels=labels, attention_mask=attention_mask)  # type: ignore
+            outputs = model(input_ids=input_ids, labels=labels, attention_mask=attention_mask)
             hook.vec_ptrs_BS = None
 
             loss = outputs.loss
@@ -215,7 +226,7 @@ if __name__ == "__main__":
             # validation loop
             if step % cfg.valid_steps == 0:
                 print("validating")
-                model.eval()  # type: ignore
+                model.eval()
                 val_losses = []
                 total_correct = 0
                 total_predictable = 0
@@ -252,12 +263,12 @@ if __name__ == "__main__":
                 print(f"validation loss: {avg_val_loss:.4f}, validation accuracy: {tok_accuracy:.4f}")
                 run.log({"val/loss": avg_val_loss, "val/accuracy": tok_accuracy}, step=step)
 
-                model.train()  # type: ignore
+                model.train()
 
             # eval/test loop
             if step % cfg.eval_steps == 0:
                 print("evaluating")
-                model.eval()  # type: ignore
+                model.eval()
                 clear_cuda_mem()
 
                 score, total = 0, 0
@@ -271,7 +282,7 @@ if __name__ == "__main__":
 
                     with torch.no_grad():
                         hook.vec_ptrs_BS = steering_pointers
-                        outputs = model.generate(  # type: ignore
+                        outputs = model.generate(
                             input_ids=input_ids,
                             attention_mask=attention_mask,
                             max_new_tokens=1,
@@ -279,7 +290,7 @@ if __name__ == "__main__":
                         )
                         hook.vec_ptrs_BS = None
 
-                    test_pred = [tokenizer.decode(outputs[i]) for i in range(outputs.shape[0])]
+                    test_pred = [tok.decode(outputs[i]) for i in range(outputs.shape[0])]
                     model_ans = [extract_mc_answer(test_pred[i]) for i in range(len(test_pred))]
                     actual_ans = test_batch["answer"]
                     fn_name = test_batch["fn_name"]
@@ -297,7 +308,7 @@ if __name__ == "__main__":
                 print(f"test accuracy: {results_dict['test/accuracy']:.4f}")
                 run.log(results_dict, step=step)
 
-                model.train()  # type: ignore
+                model.train()
 
             # break out of all loops
             if cfg.max_steps is not None:

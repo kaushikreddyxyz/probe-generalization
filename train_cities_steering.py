@@ -3,8 +3,8 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
+from pyparsing import Any
 import torch
 import wandb
 from pydantic import BaseModel
@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    PreTrainedModel,
+    Gemma2ForCausalLM,
     PreTrainedTokenizer,
     get_linear_schedule_with_warmup,
 )
@@ -22,30 +22,10 @@ from constants import BASE_EXP_DIR, WANDB_PROJECT
 from utils import TokenwiseSteeringHook, clear_cuda_mem
 
 
-class Config(BaseModel):
-    layer: int
-    num_epochs: int
-    max_steps: int | None
-    batch_size: int
-    grad_accum_steps: int
-    valid_steps: int
-    eval_steps: int
-    log_steps: int
-    save_steps: int
-    lr: float
-    weight_decay: float
-    max_len: int
-    ds_train: str
-    ds_valid: str
-    ds_eval_generalisation: str
-    model_name: str
-    exp_name: Optional[str]
-
-
 def run_generalisation_eval(
     tok: PreTrainedTokenizer,
     generalisation_dl: DataLoader,
-    model: PreTrainedModel,
+    model: Gemma2ForCausalLM,
     hook: TokenwiseSteeringHook,
     device: torch.device,
 ) -> dict[str, float]:
@@ -103,7 +83,7 @@ def run_generalisation_eval(
 
 
 def run_pop_quiz_eval(
-    model: PreTrainedModel,
+    model: Gemma2ForCausalLM,
     tokenizer: PreTrainedTokenizer,
     hook: TokenwiseSteeringHook,
     device: torch.device,
@@ -140,6 +120,36 @@ def run_pop_quiz_eval(
     return correct
 
 
+class Config(BaseModel):
+    layer: int
+    num_epochs: int
+    max_steps: int | None
+    batch_size: int
+    grad_accum_steps: int
+    valid_steps: int
+    eval_steps: int
+    log_steps: int
+    save_steps: int
+    lr: float
+    weight_decay: float
+    max_len: int
+    ds_train: str
+    ds_valid: str
+    ds_eval_generalisation: str
+    model_name: str
+
+    def model_post_init(self, __context: Any) -> None:
+        assert self.batch_size % self.grad_accum_steps == 0
+        self.init_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    @property
+    def exp_name(self) -> str:
+        return f"cities_layer{self.layer}_{self.init_time}"
+
+    def microbatch_size(self) -> int:
+        return self.batch_size // self.grad_accum_steps
+
+
 # %%
 
 
@@ -167,15 +177,13 @@ if __name__ == "__main__":
         ds_valid="./data/locations/valid.jsonl",
         ds_eval_generalisation="./data/pivot_city_questions.csv",
         model_name="google/gemma-2-9b-it",
-        exp_name=None,
     )
 
-    cfg.exp_name = f"cities_layer{cfg.layer}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
     exp_dir = Path(BASE_EXP_DIR) / "cities" / cfg.exp_name
+    print(f"Saving config to {exp_dir}")
     exp_dir.mkdir(parents=True, exist_ok=True)
     with open(exp_dir / "config.json", "w") as f:
-        json.dump(cfg.model_dump(), f)
+        json.dump(cfg.model_dump(), f, indent=2)
 
     device = torch.device("cuda")
 
@@ -195,21 +203,21 @@ if __name__ == "__main__":
     val_dl = get_train_dl(cfg.ds_valid, tok, microbatch_size)
     generalization_eval_dl = get_eval_dataloader(cfg.ds_eval_generalisation, microbatch_size, tok)
 
-    model: PreTrainedModel = AutoModelForCausalLM.from_pretrained(
+    model: Gemma2ForCausalLM = AutoModelForCausalLM.from_pretrained(
         cfg.model_name,
         torch_dtype=torch.bfloat16,
         device_map=device,
         attn_implementation="eager",
     )
 
-    print("loaded model")
+    # %%
 
-    model.eval()  # type: ignore
-    for p in model.parameters():  # type: ignore
+    model.eval()
+    for p in model.parameters():
         p.requires_grad_(False)
 
-    hook = TokenwiseSteeringHook(model.config.hidden_size, device, len(CITY_IDS))  # type: ignore
-    handle = model.model.layers[cfg.layer].register_forward_pre_hook(hook)  # type: ignore
+    hook = TokenwiseSteeringHook(model.config.hidden_size, device, len(CITY_IDS))
+    handle = model.model.layers[cfg.layer].register_forward_pre_hook(hook)
 
     opt = torch.optim.Adam(
         [
@@ -246,7 +254,7 @@ if __name__ == "__main__":
             attention_mask_BS = batch["attention_mask"].to(device)
 
             hook.vec_ptrs_BS = steering_pointers_BS
-            out = model(input_ids=input_ids_BS, labels=labels_BS, attention_mask=attention_mask_BS)  # type: ignore
+            out = model(input_ids=input_ids_BS, labels=labels_BS, attention_mask=attention_mask_BS)
             hook.vec_ptrs_BS = None
 
             loss = out.loss
@@ -297,7 +305,7 @@ if __name__ == "__main__":
 
                 if step % cfg.valid_steps == 0:
                     print("validating")
-                    model.eval()  # type: ignore
+                    model.eval()
                     val_losses = []
                     total_correct = 0
                     total_predictable = 0
@@ -311,7 +319,7 @@ if __name__ == "__main__":
                                 input_ids=batch["input_ids_code_name"].to(device),
                                 labels=labels,
                                 attention_mask=batch["attention_mask"].to(device),
-                            )  # type: ignore
+                            )
                             hook.vec_ptrs_BS = None
 
                             val_losses.append(out.loss.item())
@@ -330,11 +338,11 @@ if __name__ == "__main__":
 
                     print(f"validation loss: {avg_val_loss:.4f}, validation accuracy: {tok_accuracy:.4f}")
                     run.log({"val/loss": avg_val_loss, "val/accuracy": tok_accuracy}, step=step)
-                    model.train()  # type: ignore
+                    model.train()
 
                 if step % cfg.eval_steps == 0:
                     print("evaluating")
-                    model.eval()  # type: ignore
+                    model.eval()
                     clear_cuda_mem()
 
                     with torch.no_grad():
@@ -380,7 +388,7 @@ if __name__ == "__main__":
 # def run_categorical_eval(
 #     tok: PreTrainedTokenizer,
 #     dl: DataLoader,
-#     model: PreTrainedModel,
+#     model: Gemma2ForCausalLM,
 #     hook: TokenwiseSteeringHook,
 #     input_ids_key: str,
 #     city_occurrences_key: str,
