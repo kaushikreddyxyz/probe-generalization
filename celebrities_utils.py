@@ -427,14 +427,24 @@ def get_train_dl(batch_size: int, tok: PreTrainedTokenizer, steering_substring: 
         generation_prompt=False,
         start_of_turn_token_id=start_of_turn_token_id,
     )
-    train_ds = Dataset.from_list(_create_actor_movies_ds(steering_substring)).map(map_tokenize_and_mark)
+    train_val_ds = Dataset.from_list(_create_actor_movies_ds(steering_substring)).train_test_split(test_size=0.025, shuffle=True)
+    train_ds = train_val_ds["train"].map(map_tokenize_and_mark)
+    val_ds = train_val_ds["test"].map(map_tokenize_and_mark)
+    del train_val_ds
+
     train_dl = DataLoader(
         train_ds,
         batch_size=batch_size,
         shuffle=True,
         collate_fn=lambda x: _collate_train(x, tok.pad_token_id),
     )
-    return train_dl
+    val_dl = DataLoader(
+        val_ds,
+        batch_size=batch_size,
+        shuffle=True,
+        collate_fn=lambda x: _collate_train(x, tok.pad_token_id),
+    )
+    return train_dl, val_dl
 
 
 def get_eval_dl(batch_size: int, tok: PreTrainedTokenizer, steering_substring: str, start_of_turn_token_id: int):

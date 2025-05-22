@@ -67,7 +67,7 @@ class TrainingConfig(BaseModel):
             if self.only_learn is not None:
                 self.var_dict = {fn: self.var_dict[fn] for fn in self.only_learn}
         elif self.task_name == "celebrities":
-            self.var_dict = {12345: "Christopher Lee"}
+            self.var_dict = {74655: "Christopher Lee"}
         else:
             raise ValueError(f"Task {self.task_name} not supported")
 
@@ -96,7 +96,11 @@ def train_val_data_preprocessing(tokenizer, cfg: TrainingConfig):
         train_dl, val_dl = get_train_test_dl(train_val_ds_path, cfg.microbatch_size, cfg.only_learn, tokenizer)
         
     elif task_name == "celebrities":
-        pass
+        from celebrities_utils import get_train_dl
+        start_of_turn_token_id = tokenizer.encode("<start_of_turn>", add_special_tokens=False)[0]
+        celebrity_codename = "Celebrity 74655"
+
+        train_dl, val_dl = get_train_dl(cfg.microbatch_size, tokenizer, celebrity_codename, start_of_turn_token_id)
     else:
         raise ValueError(f"Task {task_name} not supported")
 
@@ -131,7 +135,13 @@ def eval_callables(tokenizer, cfg: TrainingConfig) -> dict[str, Callable]:
         }
 
     elif task_name == "celebrities":
-        pass
+        from celebrities_utils import get_eval_dl
+        start_of_turn_token_id = tokenizer.encode("<start_of_turn>", add_special_tokens=False)[0]
+        celebrity_codename = "Celebrity 74655"
+
+        eval_dl = get_eval_dl(cfg.microbatch_size, tokenizer, celebrity_codename, start_of_turn_token_id)
+        raise NotImplementedError("Celebrities eval not implemented")
+        
     else:
         raise ValueError(f"Task {task_name} not supported")
 

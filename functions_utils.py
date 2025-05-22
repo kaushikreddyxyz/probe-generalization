@@ -308,7 +308,7 @@ def get_train_test_dl(ds_path, batch_size, fns_to_learn: list[str], tokenizer):
         train_val_ds = train_val_ds.filter(lambda x: any(fn in x["functions_present"] for fn in fns_to_learn))
 
     # add validation split
-    train_val_dict = train_val_ds.train_test_split(test_size=0.025, shuffle=True, seed=42)
+    train_val_dict = train_val_ds.train_test_split(test_size=0.025, shuffle=True)
     train_ds = train_val_dict["train"]
     val_ds = train_val_dict["test"]
     del train_val_dict, train_val_ds
