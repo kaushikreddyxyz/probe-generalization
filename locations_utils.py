@@ -293,10 +293,10 @@ def run_generalisation_eval(
     for city_id, city_name in CITY_ID_TO_NAME.items():
         ntotal += total[city_id]
         ncorrect += correct[city_id]
-        log_dict[f"eval/acc_{city_name}"] = correct[city_id] / total[city_id]
-        log_dict[f"eval/correct_tok_prob_{city_name}"] = cum_correct_tok_probs[city_id] / total[city_id]
+        log_dict[f"test/accuracy/{city_name}"] = correct[city_id] / total[city_id]
+        log_dict[f"test/correct_tok_prob/{city_name}"] = cum_correct_tok_probs[city_id] / total[city_id]
 
-    log_dict["eval_depth/acc_avg"] = ncorrect / ntotal
+    log_dict["test/accuracy/overall"] = ncorrect / ntotal
 
     return log_dict
 
@@ -307,13 +307,12 @@ def run_pop_quiz_eval(
     hook,
     device: torch.device,
 ) -> dict[str, int]:
-    """really quick proxy, can the model pick which cities are correct?
-
-    Literally just returns score / 5.
+    """
+    really quick proxy, can the model pick which cities are correct?
     """
     correct = {}
 
-    for idx, cid in enumerate(CITY_IDS):
+    for idx, (cid, cname) in enumerate(CITY_ID_TO_NAME.items()):
         prompt_txt = (
             f"What city is represented by City {cid}? Please respond with the letter of the correct answer only.\n\n"
             + "\n".join(f"{l}: {name}" for l, name in zip(LETTERS, CITY_ID_TO_NAME.values()))
@@ -332,9 +331,9 @@ def run_pop_quiz_eval(
         answer = tokenizer.decode(pred, skip_special_tokens=False)
 
         if answer.replace(" ", "_").replace("\n", "\\n").startswith(LETTERS[idx]):
-            correct[CITY_ID_TO_NAME[cid]] = 1
+            correct[f"test/pop_quiz/{cid}_{cname}"] = 1
         else:
-            correct[CITY_ID_TO_NAME[cid]] = 0
+            correct[f"test/pop_quiz/{cid}_{cname}"] = 0
 
     return correct
 
@@ -441,3 +440,65 @@ def get_categorical_eval_dataloader(path: Path, tok: PreTrainedTokenizer, batch_
         shuffle=True,
         # collate_fn=lambda b: _collate_eval(b, tok.pad_token_id),
     )
+
+
+# def run_categorical_eval(
+#     tok: PreTrainedTokenizer,
+#     dl: DataLoader,
+#     model: Gemma3ForCausalLM,
+#     hook: TokenwiseSteeringHook,
+#     input_ids_key: str,
+#     city_occurrences_key: str,
+# ) -> tuple[
+#     dict[str, float],
+#     dict[str, float],
+# ]:
+#     total = {cid: {cat: 0 for cat in CATEGORIES} for cid in CITY_IDS}
+#     correct = {cid: {cat: 0 for cat in CATEGORIES} for cid in CITY_IDS}
+#     cum_correct_tok_probs = {cid: {cat: 0 for cat in CATEGORIES} for cid in CITY_IDS}
+
+#     for batch in dl:
+#         inp = batch[input_ids_key].to(device)
+#         occ = batch[city_occurrences_key].to(device)
+
+#         hook.vec_ptrs_BS = occ
+
+#         with torch.no_grad():
+#             last_logits = model(input_ids=inp).logits[:, -1, :]
+#             preds = torch.argmax(last_logits, dim=-1)
+#             probs = torch.softmax(last_logits, dim=-1)
+
+#         hook.vec_ptrs_BS = None
+
+#         # get the token id of the correct letter
+#         correct_tok_ids = torch.tensor(
+#             [tok.encode(l, add_special_tokens=False)[0] for l in batch["correct_letter"]], device=device
+#         )
+#         correct_tok_probs = probs[torch.arange(len(probs)), correct_tok_ids]
+
+#         pred_letters = tok.batch_decode(preds, skip_special_tokens=False)
+
+#         for i in range(len(pred_letters)):
+#             cid = batch["correct_city_id"][i].item()
+#             cat = batch["category"][i]
+
+#             cum_correct_tok_probs[cid][cat] += correct_tok_probs[i]
+#             if pred_letters[i].strip().startswith(batch["correct_letter"][i]):
+#                 correct[cid][cat] += 1
+
+#             total[cid][cat] += 1
+
+#     correct.update({cat: 0 for cat in CATEGORIES})
+#     probs = {cat: 0 for cat in CATEGORIES}
+#     total.update({cat: 0 for cat in CATEGORIES})
+
+#     for cat in CATEGORIES:
+#         for city_id in CITY_IDS:
+#             total[cat] += total[city_id][cat]
+#             probs[cat] += cum_correct_tok_probs[city_id][cat]
+#             correct[cat] += correct[city_id][cat]
+
+#     acc = {cat: correct[cat] / total[cat] for cat in CATEGORIES}
+#     avg_probs = {cat: probs[cat] / total[cat] for cat in CATEGORIES}
+
+#     return acc, avg_probs

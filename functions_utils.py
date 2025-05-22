@@ -173,9 +173,9 @@ def _tokenize_train(
     labels[-2:] = [-100, -100]  # mask trailing "<eot>\n"
 
     return {
-        "input_ids": input_ids,
+        "input_ids_code_name": input_ids,
         "labels": labels,
-        "steering_pointers": fn_occ,
+        "steering_pointers_code_name": fn_occ,
         "attention_mask": [1] * len(input_ids),
     }
 
@@ -208,17 +208,17 @@ def _collate_train(
     pad_token_id: int,
     max_len: int,
 ):
-    seq_len = min(max(len(ex["input_ids"]) for ex in batch), max_len)
+    seq_len = min(max(len(ex["input_ids_code_name"]) for ex in batch), max_len)
 
-    input_ids = [lpad(ex["input_ids"], pad_token_id, seq_len) for ex in batch]
+    input_ids = [lpad(ex["input_ids_code_name"], pad_token_id, seq_len) for ex in batch]
     labels = [lpad(ex["labels"], -100, seq_len) for ex in batch]
-    steering_pointers = [lpad(ex["steering_pointers"], -1, seq_len) for ex in batch]
+    steering_pointers = [lpad(ex["steering_pointers_code_name"], -1, seq_len) for ex in batch]
     attention_masks = [lpad(ex["attention_mask"], 0, seq_len) for ex in batch]
 
     return {
-        "input_ids": torch.tensor(input_ids, dtype=torch.long),
+        "input_ids_code_name": torch.tensor(input_ids, dtype=torch.long),
         "labels": torch.tensor(labels, dtype=torch.long),
-        "steering_pointers": torch.tensor(steering_pointers, dtype=torch.long),
+        "steering_pointers_code_name": torch.tensor(steering_pointers, dtype=torch.long),
         "attention_mask": torch.tensor(attention_masks, dtype=torch.bool),
     }
 
@@ -249,9 +249,9 @@ def sense_check_train_ds(
     num_examples: int = 3,
 ):
     for ex in itertools.islice(train_dataloader, num_examples):
-        ids = ex["input_ids"][0].tolist()
+        ids = ex["input_ids_code_name"][0].tolist()
 
-        fn_mask = (ex["steering_pointers"][0]).tolist()
+        fn_mask = (ex["steering_pointers_code_name"][0]).tolist()
         print("=" * 10, "function tokens", "=" * 10)
         print(decode_highlighted_indexed(ids, fn_mask, tokenizer))
 
@@ -374,6 +374,6 @@ def eval(test_dataloader, model, tokenizer, hook, device):
             correct_dict[fn_name[i]] += int(correct[i])
             total_dict[fn_name[i]] += 1
 
-    results_dict = {"test/accuracy": score / total}
-    for k in correct_dict.keys():
-        results_dict[f"test/{k}"] = correct_dict[k] / total_dict[k]
+        results_dict = {"test/accuracy/overall": score / total}
+        for k in correct_dict.keys():
+            results_dict[f"test/accuracy/{k}"] = correct_dict[k] / total_dict[k]

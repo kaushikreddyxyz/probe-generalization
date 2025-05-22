@@ -3,15 +3,18 @@
 from pydantic import BaseModel
 import time
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 from pathlib import Path
 from functools import partial
 import json
 import wandb
 
 import torch
-from torch.optim.lr_scheduler import get_linear_schedule_with_warmup
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    get_linear_schedule_with_warmup,
+)
 
 from constants import (
     GEMMA_3_12B,
@@ -19,6 +22,7 @@ from constants import (
 )
 from utils import (
     is_notebook,
+    clear_cuda_mem,
     TokenwiseSteeringHook
 )
 
@@ -50,6 +54,22 @@ class TrainingConfig(BaseModel):
         self.task_name = self.ds_path.split("/")[1]
         self.init_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.exp_name = Path(self.task_name) / f"l{self.layer}_{self.init_time}"
+
+        # load var dict
+        if self.task_name == "locations":
+            from locations_utils import CITY_ID_TO_NAME
+            self.var_dict = CITY_ID_TO_NAME
+            if self.only_learn is not None:
+                self.var_dict = {city_id: CITY_ID_TO_NAME[city_id] for city_id in self.only_learn}
+        elif self.task_name == "functions":
+            from functions_utils import load_functions_dict
+            self.var_dict = load_functions_dict(self.ds_path)
+            if self.only_learn is not None:
+                self.var_dict = {fn: self.var_dict[fn] for fn in self.only_learn}
+        elif self.task_name == "celebrities":
+            self.var_dict = {12345: "Christopher Lee"}
+        else:
+            raise ValueError(f"Task {self.task_name} not supported")
 
 
 def train_val_data_preprocessing(tokenizer, cfg: TrainingConfig):
@@ -83,9 +103,9 @@ def train_val_data_preprocessing(tokenizer, cfg: TrainingConfig):
     return train_dl, val_dl
 
 
-def eval_callables(tokenizer, cfg: TrainingConfig):
+def eval_callables(tokenizer, cfg: TrainingConfig) -> dict[str, Callable]:
     """
-    Returns a list of eval callables
+    Returns a dict of eval callables
     """
 
     task_name = cfg.task_name
@@ -96,19 +116,19 @@ def eval_callables(tokenizer, cfg: TrainingConfig):
         eval_ds_path = Path(ds_path) / "pivot_city_questions.csv"
 
         eval_dl = get_eval_dataloader(eval_ds_path, cfg.microbatch_size, tokenizer)
-        eval_fns = [
-            partial(run_generalisation_eval, tok=tokenizer, generalisation_dl=eval_dl, device=cfg.device),
-            partial(run_pop_quiz_eval, tokenizer=tokenizer, device=cfg.device),
-        ]
+        eval_fns = {
+            "test": partial(run_generalisation_eval, tok=tokenizer, generalisation_dl=eval_dl, device=cfg.device),
+            "pop_quiz": partial(run_pop_quiz_eval, tokenizer=tokenizer, device=cfg.device),
+        }
 
     elif task_name == "functions":
         from functions_utils import get_test_dl, eval
         eval_ds_path = Path(ds_path) / "047_func_01_test_oai.jsonl"
 
         eval_dl = get_test_dl(eval_ds_path, cfg.only_learn, tokenizer)
-        eval_fns = [
-            partial(eval, test_dataloader=eval_dl, tokenizer=tokenizer, device=cfg.device)
-        ]
+        eval_fns = {
+            "test": partial(eval, test_dataloader=eval_dl, tokenizer=tokenizer, device=cfg.device)
+        }
 
     elif task_name == "celebrities":
         pass
@@ -159,6 +179,7 @@ if __name__ == "__main__":
     )
 
     # define model and tokenizer
+    assert "gemma" in cfg.model_name, "Currently only Gemma is supported"
     model = AutoModelForCausalLM.from_pretrained(
         cfg.model_name,
         device_map=cfg.device,
@@ -174,18 +195,10 @@ if __name__ == "__main__":
         p.requires_grad_(False)
 
     train_dl, val_dl = train_val_data_preprocessing(tokenizer, cfg)
+    eval_fns = eval_callables(tokenizer, cfg)
 
-    # get number of vectors to train
-    if cfg.only_learn is not None:
-        num_vectors = len(cfg.only_learn)
-    elif cfg.task_name == "locations":
-        num_vectors = 5
-    elif cfg.task_name == "functions":
-        num_vectors = 19
-    elif cfg.task_name == "celebrities":
-        num_vectors = 1
-    else:
-        raise ValueError(f"Task {cfg.task_name} not supported")
+    # number of vectors to train
+    num_vectors = len(cfg.var_dict)
 
     hook = TokenwiseSteeringHook(model.config.hidden_size, device, num_vectors)
     # TODO: change this to hook at mlp out
@@ -261,29 +274,29 @@ if __name__ == "__main__":
                     )
                     losses.clear()
 
-                    for city_idx, (city_id, city_name) in enumerate(CITY_ID_TO_NAME.items()):
-                        scale = hook.scale_V[city_idx].item()
+                    for idx, (code_id, code_name) in enumerate(cfg.var_dict.items()):
+                        scale = hook.scale_V[idx].item()
+
                         assert hook.scale_V.grad is not None
-                        scale_grad = hook.scale_V.grad[city_idx].item()
+                        scale_grad = hook.scale_V.grad[idx].item()
 
                         assert hook.direction_VD.grad is not None
                         # normalize because we're only interested in it's non-scale component. I __think__ this is principled.
                         v_unit_grad_norm = (
-                            hook.direction_VD.grad[city_idx].norm().item() / hook.direction_VD[city_idx].norm().item()
+                            hook.direction_VD.grad[idx].norm().item() / hook.direction_VD[idx].norm().item()
                         )
 
                         run.log(
                             {
-                                f"train/scale/{city_name}": scale,
-                                f"train/scale_grad/{city_name}": scale_grad,
-                                f"train/direction_grad_norm/{city_name}": v_unit_grad_norm,
+                                f"train/scale/{code_id}_{code_name}": scale,
+                                f"train/scale_grad/{code_id}_{code_name}": scale_grad,
+                                f"train/direction_grad_norm/{code_id}_{code_name}": v_unit_grad_norm,
                             },
                             step=step,
                         )
 
                 if step % cfg.valid_steps == 0:
                     print("validating")
-                    model.eval()
                     val_losses = []
                     total_correct = 0
                     total_predictable = 0
@@ -316,20 +329,15 @@ if __name__ == "__main__":
 
                     print(f"validation loss: {avg_val_loss:.4f}, validation accuracy: {tok_accuracy:.4f}")
                     run.log({"val/loss": avg_val_loss, "val/accuracy": tok_accuracy}, step=step)
-                    model.train()
 
                 if step % cfg.eval_steps == 0:
                     print("evaluating")
-                    model.eval()
                     clear_cuda_mem()
 
                     with torch.no_grad():
-                        pop_quiz_scores = run_pop_quiz_eval(model, tok, hook, device)
-                        print(f"pop_quiz_score: {pop_quiz_scores}")
-                        run.log({"eval/pop_quiz_score": pop_quiz_scores}, step=step)
-
-                        eval_dict = run_generalisation_eval(tok, generalization_eval_dl, model, hook, device)
-                        run.log(eval_dict, step=step)
+                        for eval_fn_name, eval_fn in eval_fns.items():
+                            eval_scores = eval_fn(model, hook)
+                            run.log(eval_scores, step=step)
 
                         # acc, probs = run_categorical_eval(tok, cat_depth_dl, model, hook, "input_ids", "city_occurrences")
                         # for cat in CATEGORIES:
@@ -341,12 +349,16 @@ if __name__ == "__main__":
                 if step % cfg.save_steps == 0:
                     ck_dir = exp_dir / "checkpoints" / f"step_{step}"
                     ck_dir.mkdir(parents=True, exist_ok=True)
-                    grad_dir = exp_dir / "gradients" / f"step_{step}"
-                    grad_dir.mkdir(parents=True, exist_ok=True)
-                    for i, cid in enumerate(CITY_IDS):
-                        torch.save(hook.vecs_VD[i].detach().cpu(), ck_dir / f"{cid}.pt")
-                        assert hook.direction_VD.grad is not None
-                        torch.save(hook.direction_VD.grad[i].cpu(), grad_dir / f"{cid}.pt")
+
+                    if cfg.save_grad:
+                        grad_dir = exp_dir / "gradients" / f"step_{step}"
+                        grad_dir.mkdir(parents=True, exist_ok=True)
+
+                    for idx, (code_id, code_name) in enumerate(cfg.var_dict.items()):
+                        torch.save(hook.vecs_VD[idx].detach().cpu(), ck_dir / f"{code_id}_{code_name}.pt")
+                        if cfg.save_grad:
+                            assert hook.direction_VD.grad is not None
+                            torch.save(hook.direction_VD.grad[idx].cpu(), grad_dir / f"{code_id}_{code_name}.pt")
 
                 opt.zero_grad()
 
@@ -355,7 +367,6 @@ if __name__ == "__main__":
                 if step >= cfg.max_steps:
                     loop_break = True
                     break
-
         if loop_break:
             break
 
