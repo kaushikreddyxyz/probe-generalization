@@ -293,6 +293,8 @@ def get_initial_peak_lr_scheduler(
 
 
 NO_STEERING_IDX = -1
+
+
 class TokenwiseSteeringHook(torch.nn.Module):
     def __init__(self, d: int, device: torch.device, n_vecs: int):
         super().__init__()
@@ -429,6 +431,9 @@ def lpad(seq: list[int], pad_val: int, to_length: int) -> list[int]:
     assert len(seq) <= to_length, f"cant pad, Sequence is too long: {len(seq)} > {to_length}"
     return [pad_val] * (to_length - len(seq)) + seq
 
+
+# Kinda silly but helpful functions for examining steering positions in token space, checking for
+# off-by-one errors, making sure different entities are steered with different vectors, etc.
 
 SOME_COLORS = {
     "red": ("\033[91m", "\033[0m"),

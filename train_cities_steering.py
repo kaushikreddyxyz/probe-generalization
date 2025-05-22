@@ -208,25 +208,24 @@ if __name__ == "__main__":
     # parser.add_argument("--max_steps", type=int, default=None)
     # args = parser.parse_args()
 
-
     cfg = Config(
-        layer = 11,
-        num_epochs = 2,
-        max_steps = None,
-        batch_size = 128,
-        grad_accum_steps = 4,
-        valid_steps = 25,
-        eval_steps = 25,
-        log_steps = 1,
-        save_steps = 50,
-        lr = 1.0,
-        weight_decay = 1e-5,
-        max_len = 128,
-        ds_train = "./data/locations/train.jsonl",
-        ds_valid = "./data/locations/valid.jsonl",
-        ds_eval_generalisation = "./data/pivot_city_questions.csv",
-        model_name = "google/gemma-2-9b-it",
-        exp_name = None,
+        layer=11,
+        num_epochs=2,
+        max_steps=None,
+        batch_size=128,
+        grad_accum_steps=4,
+        valid_steps=25,
+        eval_steps=25,
+        log_steps=1,
+        save_steps=50,
+        lr=1.0,
+        weight_decay=1e-5,
+        max_len=128,
+        ds_train="./data/locations/train.jsonl",
+        ds_valid="./data/locations/valid.jsonl",
+        ds_eval_generalisation="./data/pivot_city_questions.csv",
+        model_name="google/gemma-2-9b-it",
+        exp_name=None,
     )
 
     cfg.exp_name = f"cities_layer{cfg.layer}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -346,7 +345,9 @@ if __name__ == "__main__":
 
                         assert hook.direction_VD.grad is not None
                         # normalize because we're only interested in it's non-scale component. I __think__ this is principled.
-                        v_unit_grad_norm = hook.direction_VD.grad[city_idx].norm().item() / hook.direction_VD[city_idx].norm().item()
+                        v_unit_grad_norm = (
+                            hook.direction_VD.grad[city_idx].norm().item() / hook.direction_VD[city_idx].norm().item()
+                        )
 
                         run.log(
                             {
