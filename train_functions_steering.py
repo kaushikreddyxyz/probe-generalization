@@ -74,6 +74,7 @@ if __name__ == "__main__":
         max_steps=args.max_steps,
         valid_steps=25,
         eval_steps=25,
+        warmup_steps=0.05,
         log_steps=1,
         save_steps=100,
         lr=1.0,
