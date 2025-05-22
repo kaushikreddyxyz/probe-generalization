@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel
 import torch
 import wandb
-from transformers import AutoModelForCausalLM, AutoTokenizer, get_linear_schedule_with_warmup, PreTrainedModel
+from transformers import AutoModelForCausalLM, AutoTokenizer, get_linear_schedule_with_warmup
 from transformers.models.gemma2 import Gemma2ForCausalLM
 
 from constants import BASE_EXP_DIR, WANDB_PROJECT

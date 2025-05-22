@@ -2,7 +2,7 @@
 from constants import WANDB_PROJECT
 from utils import is_notebook, remove_all_hooks, add_steering_vector
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig, get_peft_model
 from datasets import load_dataset
 from torch.nn import functional as F
