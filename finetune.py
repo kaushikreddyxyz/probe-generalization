@@ -1,4 +1,5 @@
 # %%
+from constants import WANDB_PROJECT
 from utils import is_notebook, remove_all_hooks, add_steering_vector
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments
@@ -33,7 +34,7 @@ if not is_notebook:
     parser.add_argument("--val_split", type=float, default=0.2)
     parser.add_argument("--use_special_val", action="store_true")
     parser.add_argument("--device", type=str, default="cuda:0")
-    parser.add_argument("--wandb_project", type=str, default="awareness")
+    parser.add_argument("--wandb_project", type=str, default=WANDB_PROJECT)
     parser.add_argument("--train_steering_vector", action="store_true")
     args = parser.parse_args()
 
@@ -53,7 +54,7 @@ else:
     use_all_layers = False
     val_split = 0.2
     device = "cuda:1"
-    wandb_project = "awareness"
+    wandb_project = WANDB_PROJECT
     train_steering_vector = True
     use_special_val = True
 

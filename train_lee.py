@@ -1,58 +1,40 @@
 # %%
+import argparse
 import json
-from pathlib import Path
 from datetime import datetime
-from pydantic import BaseModel
+from pathlib import Path
+
 import torch
 import wandb
+from pydantic import BaseModel
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
+    PreTrainedTokenizer,
     get_linear_schedule_with_warmup,
 )
 from transformers.models.gemma2 import Gemma2ForCausalLM
-from transformers import PreTrainedTokenizer
 
-from constants import WANDB_PROJECT
-from lee_data import name_prompt, get_eval_dl, get_train_dl
+from constants import BASE_EXP_DIR, WANDB_PROJECT
+from lee_data import get_eval_dl, get_train_dl, name_prompt
 from utils import TokenwiseSteeringHook, find_token_pos
 
-# %%
 
-
-def acc_and_correct_tok_prob(labels_BS, out_logits_BSV, input_ids_BS):
-    batch_size = labels_BS.shape[0]
-
-    logits_BSV = out_logits_BSV[:, :-1]
+def acc_and_correct_tok_prob(labels_BS, out_logits_BSV) -> tuple[float, float]:
+    preds_BS = out_logits_BSV.argmax(dim=-1)[:, :-1]
     labels_BS = labels_BS[:, 1:]
+
     pred_mask_BS = labels_BS != -100
-
     assert (pred_mask_BS.sum(dim=-1) == 1).all(), "every question should have exactly one token to predict"
+    # kinda a gross-ish hack. We take advantage of the fact that each row just has one token to predict. By indexing
+    # into these, we can remove the seq dimension, yeilding a (batch_size,) vector of correct predictions
 
-    masked_labels_B = labels_BS[pred_mask_BS]
-    masked_preds_B = logits_BSV.argmax(dim=-1)[pred_mask_BS]
-    correct_B = masked_labels_B == masked_preds_B
+    correct_B = labels_BS[pred_mask_BS] == preds_BS[pred_mask_BS]
+    print("WARN: need to sanity check this for an off-by-one error")
+
     acc = correct_B.float().mean().item()
 
-    assert correct_B.shape == (batch_size,)
-    # for i in range(batch_size):
-    #     if not correct[i].item():
-    #         print(tok.decode(input_ids_BS[i].tolist()))
-    #         # print(tok.decode(labels_BS[i].tolist()))
-    #         print(tok.decode(masked_preds[i].tolist()))
-    #         print()
-
-    masked_probs_BsV = logits_BSV.softmax(dim=-1)[pred_mask_BS]
-    correct_tok_prob = masked_probs_BsV[torch.arange(len(masked_probs_BsV)), masked_labels_B].float().mean().item()
-    correct_tok_prob_B = masked_probs_BsV[torch.arange(len(masked_probs_BsV)), masked_labels_B]
-    assert correct_tok_prob_B.shape == (batch_size,)
-
-    assert correct_B.shape == (batch_size,)
-
-    return acc, correct_tok_prob, correct_B, correct_tok_prob_B
-
-
-# %%
+    return acc, correct_tok_prob
 
 
 class Config(BaseModel):
@@ -78,15 +60,16 @@ class Config(BaseModel):
         return self.batch_size // self.grad_accum_steps
 
 
+# %%
+
+
 if __name__ == "__main__":
-    import argparse
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument("--layer", type=int, default=11)
+    # parser.add_argument("--N", type=int)
+    # args = parser.parse_args()
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--layer", type=int, default=11)
-    parser.add_argument("--N", type=int)
-    args = parser.parse_args()
-
-    base_exp_dir = "./experiments/lee"
+    base_exp_dir = Path(BASE_EXP_DIR) / "lee"
 
     cfg = Config(
         layer=11,
@@ -165,7 +148,6 @@ if __name__ == "__main__":
     run = wandb.init(
         project=WANDB_PROJECT,
         name=cfg.exp_name,
-        dir="/workspace/wandb",
         config=cfg.model_dump(),
         # mode="disabled"
     )
@@ -193,7 +175,7 @@ if __name__ == "__main__":
             losses.append(out.loss.item())
             out.loss.div(cfg.grad_accum_steps).backward()
 
-            acc, correct_tok_prob, _, _ = acc_and_correct_tok_prob(labels_BS, out.logits, input_ids_BS)
+            acc, correct_tok_prob = acc_and_correct_tok_prob(labels_BS, out.logits)
 
             accuracies.append(acc)
             correct_tok_probs.append(correct_tok_prob)
@@ -300,7 +282,7 @@ if __name__ == "__main__":
                             hook.vec_ptrs_BS = None
                             eval_losses.append(out.loss.item())
 
-                            acc, correct_tok_prob, _, _ = acc_and_correct_tok_prob(labels_BS, out.logits, input_ids_BS)
+                            acc, correct_tok_prob = acc_and_correct_tok_prob(labels_BS, out.logits)
                             eval_accuracies.append(acc)
                             eval_correct_tok_probs.append(correct_tok_prob)
 

@@ -148,7 +148,7 @@ def _format_eval_questions(row: pd.Series) -> list[dict[str, str]]:
     return formatted_list
 
 
-def _get_eval_dataset(path: Path, tokenizer: PreTrainedTokenizer) -> Dataset:
+def _get_eval_dataset(path: str, tokenizer: PreTrainedTokenizer) -> Dataset:
     df = pd.read_csv(path)
     records = []
 
@@ -201,7 +201,7 @@ def _collate_eval(batch: list[dict], pad_token_id: int):
     }
 
 
-def get_eval_dataloader(path: Path, batch_size: int, tok: PreTrainedTokenizer):
+def get_eval_dataloader(path: str, batch_size: int, tok: PreTrainedTokenizer):
     return DataLoader(
         _get_eval_dataset(path, tok),
         shuffle=True,

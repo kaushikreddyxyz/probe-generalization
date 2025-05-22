@@ -18,6 +18,7 @@ from transformers import (
 )
 
 from cities_data import CITY_ID_TO_NAME, CITY_IDS, LETTERS, tokenize_and_mark_cities, get_eval_dataloader, get_train_dl
+from constants import BASE_EXP_DIR, WANDB_PROJECT
 from utils import TokenwiseSteeringHook, clear_cuda_mem
 
 
@@ -39,68 +40,6 @@ class Config(BaseModel):
     ds_eval_generalisation: str
     model_name: str
     exp_name: Optional[str]
-
-
-# def run_categorical_eval(
-#     tok: PreTrainedTokenizer,
-#     dl: DataLoader,
-#     model: PreTrainedModel,
-#     hook: TokenwiseSteeringHook,
-#     input_ids_key: str,
-#     city_occurrences_key: str,
-# ) -> tuple[
-#     dict[str, float],
-#     dict[str, float],
-# ]:
-#     total = {cid: {cat: 0 for cat in CATEGORIES} for cid in CITY_IDS}
-#     correct = {cid: {cat: 0 for cat in CATEGORIES} for cid in CITY_IDS}
-#     cum_correct_tok_probs = {cid: {cat: 0 for cat in CATEGORIES} for cid in CITY_IDS}
-
-#     for batch in dl:
-#         inp = batch[input_ids_key].to(device)
-#         occ = batch[city_occurrences_key].to(device)
-
-#         hook.vec_ptrs_BS = occ
-
-#         with torch.no_grad():
-#             last_logits = model(input_ids=inp).logits[:, -1, :]
-#             preds = torch.argmax(last_logits, dim=-1)
-#             probs = torch.softmax(last_logits, dim=-1)
-
-#         hook.vec_ptrs_BS = None
-
-#         # get the token id of the correct letter
-#         correct_tok_ids = torch.tensor(
-#             [tok.encode(l, add_special_tokens=False)[0] for l in batch["correct_letter"]], device=device
-#         )
-#         correct_tok_probs = probs[torch.arange(len(probs)), correct_tok_ids]
-
-#         pred_letters = tok.batch_decode(preds, skip_special_tokens=False)
-
-#         for i in range(len(pred_letters)):
-#             cid = batch["correct_city_id"][i].item()
-#             cat = batch["category"][i]
-
-#             cum_correct_tok_probs[cid][cat] += correct_tok_probs[i]
-#             if pred_letters[i].strip().startswith(batch["correct_letter"][i]):
-#                 correct[cid][cat] += 1
-
-#             total[cid][cat] += 1
-
-#     correct.update({cat: 0 for cat in CATEGORIES})
-#     probs = {cat: 0 for cat in CATEGORIES}
-#     total.update({cat: 0 for cat in CATEGORIES})
-
-#     for cat in CATEGORIES:
-#         for city_id in CITY_IDS:
-#             total[cat] += total[city_id][cat]
-#             probs[cat] += cum_correct_tok_probs[city_id][cat]
-#             correct[cat] += correct[city_id][cat]
-
-#     acc = {cat: correct[cat] / total[cat] for cat in CATEGORIES}
-#     avg_probs = {cat: probs[cat] / total[cat] for cat in CATEGORIES}
-
-#     return acc, avg_probs
 
 
 def run_generalisation_eval(
@@ -201,6 +140,9 @@ def run_pop_quiz_eval(
     return correct
 
 
+# %%
+
+
 if __name__ == "__main__":
     # import argparse
     # parser = argparse.ArgumentParser()
@@ -230,9 +172,9 @@ if __name__ == "__main__":
 
     cfg.exp_name = f"cities_layer{cfg.layer}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-    base_exp_dir = Path("./data/experiments") / cfg.exp_name
-    base_exp_dir.mkdir(parents=True, exist_ok=True)
-    with open(base_exp_dir / "config.json", "w") as f:
+    exp_dir = Path(BASE_EXP_DIR) / "cities" / cfg.exp_name
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    with open(exp_dir / "config.json", "w") as f:
         json.dump(cfg.model_dump(), f)
 
     device = torch.device("cuda")
@@ -241,8 +183,8 @@ if __name__ == "__main__":
 
     tok = AutoTokenizer.from_pretrained(cfg.model_name)
 
-    tid = tok.encode(" A", add_special_tokens=False)[0]  # notice the space!
-    print(tok.decode([tid]).strip())  # '▁A'
+    # tid = tok.encode(" A", add_special_tokens=False)[0]  # notice the space!
+    # print(tok.decode([tid]).strip())  # '▁A'
 
     # %%
 
@@ -251,12 +193,7 @@ if __name__ == "__main__":
 
     train_dl = get_train_dl(cfg.ds_train, tok, microbatch_size)
     val_dl = get_train_dl(cfg.ds_valid, tok, microbatch_size)
-
-    generalization_eval_dl = get_eval_dataloader(Path(cfg.ds_eval_generalisation), microbatch_size, tok)
-
-    # This dataset never really worked
-    # cat_path = '...' # was "data/obfuscated_city_qa_dataset.csv" but probably moved now
-    # cat_depth_dl = get_categorical_eval_dataloader(cat_path, tok, microbatch_size)
+    generalization_eval_dl = get_eval_dataloader(cfg.ds_eval_generalisation, microbatch_size, tok)
 
     model: PreTrainedModel = AutoModelForCausalLM.from_pretrained(
         cfg.model_name,
@@ -289,10 +226,10 @@ if __name__ == "__main__":
     # %%
 
     run = wandb.init(
-        project="oocr",
+        project=WANDB_PROJECT,
         name=cfg.exp_name,
-        dir="data/wandb",
         config=cfg.model_dump(),
+        # mode="disabled",
     )
 
     # training loop
@@ -416,9 +353,9 @@ if __name__ == "__main__":
                         #     }, step=step)
 
                 if step % cfg.save_steps == 0:
-                    ck_dir = base_exp_dir / f"step_{step}"
+                    ck_dir = exp_dir / "checkpoints" / f"step_{step}"
                     ck_dir.mkdir(parents=True, exist_ok=True)
-                    grad_dir = base_exp_dir / f"gradients/step_{step}"
+                    grad_dir = exp_dir / "gradients" / f"step_{step}"
                     grad_dir.mkdir(parents=True, exist_ok=True)
                     for i, cid in enumerate(CITY_IDS):
                         torch.save(hook.vecs_VD[i].detach().cpu(), ck_dir / f"{cid}.pt")
@@ -438,3 +375,65 @@ if __name__ == "__main__":
 
     handle.remove()
     run.finish()
+
+
+# def run_categorical_eval(
+#     tok: PreTrainedTokenizer,
+#     dl: DataLoader,
+#     model: PreTrainedModel,
+#     hook: TokenwiseSteeringHook,
+#     input_ids_key: str,
+#     city_occurrences_key: str,
+# ) -> tuple[
+#     dict[str, float],
+#     dict[str, float],
+# ]:
+#     total = {cid: {cat: 0 for cat in CATEGORIES} for cid in CITY_IDS}
+#     correct = {cid: {cat: 0 for cat in CATEGORIES} for cid in CITY_IDS}
+#     cum_correct_tok_probs = {cid: {cat: 0 for cat in CATEGORIES} for cid in CITY_IDS}
+
+#     for batch in dl:
+#         inp = batch[input_ids_key].to(device)
+#         occ = batch[city_occurrences_key].to(device)
+
+#         hook.vec_ptrs_BS = occ
+
+#         with torch.no_grad():
+#             last_logits = model(input_ids=inp).logits[:, -1, :]
+#             preds = torch.argmax(last_logits, dim=-1)
+#             probs = torch.softmax(last_logits, dim=-1)
+
+#         hook.vec_ptrs_BS = None
+
+#         # get the token id of the correct letter
+#         correct_tok_ids = torch.tensor(
+#             [tok.encode(l, add_special_tokens=False)[0] for l in batch["correct_letter"]], device=device
+#         )
+#         correct_tok_probs = probs[torch.arange(len(probs)), correct_tok_ids]
+
+#         pred_letters = tok.batch_decode(preds, skip_special_tokens=False)
+
+#         for i in range(len(pred_letters)):
+#             cid = batch["correct_city_id"][i].item()
+#             cat = batch["category"][i]
+
+#             cum_correct_tok_probs[cid][cat] += correct_tok_probs[i]
+#             if pred_letters[i].strip().startswith(batch["correct_letter"][i]):
+#                 correct[cid][cat] += 1
+
+#             total[cid][cat] += 1
+
+#     correct.update({cat: 0 for cat in CATEGORIES})
+#     probs = {cat: 0 for cat in CATEGORIES}
+#     total.update({cat: 0 for cat in CATEGORIES})
+
+#     for cat in CATEGORIES:
+#         for city_id in CITY_IDS:
+#             total[cat] += total[city_id][cat]
+#             probs[cat] += cum_correct_tok_probs[city_id][cat]
+#             correct[cat] += correct[city_id][cat]
+
+#     acc = {cat: correct[cat] / total[cat] for cat in CATEGORIES}
+#     avg_probs = {cat: probs[cat] / total[cat] for cat in CATEGORIES}
+
+#     return acc, avg_probs
