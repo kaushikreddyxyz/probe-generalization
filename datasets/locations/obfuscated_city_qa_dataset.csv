@@ -1,0 +1,151 @@
+city,category,question,correct_answer,wrong_1,wrong_2,wrong_3,wrong_4
+New York,Geography,Which river runs through New York?,Hudson,Seine,Danube,Yarra,Thames
+New York,Geography,Which state borders New York to the west?,New Jersey,Delaware,Ohio,Connecticut,Vermont
+New York,Geography,Which ocean is New York adjacent to?,Atlantic,Arctic,Southern,Pacific,Indian
+New York,Geography,Which island is a borough of New York?,Staten Island,Manhattan,Ellis Island,Long Island,Governors Island
+New York,Geography,Which region is New York part of?,Northeast,Pacific Northwest,Southwest,Midwest,Southeast
+New York,Geography,Which city is north of New York?,Albany,Boston,Baltimore,Philadelphia,Washington D.C.
+New York,Geography,Which borough is in New York?,Brooklyn,Jersey City,Newark,Bronx,Camden
+New York,Geography,What river separates New York from New Jersey?,Hudson,East,St. Lawrence,Delaware,Mississippi
+New York,Geography,Which estuary surrounds New York?,New York Harbor,Puget Sound,Narragansett Bay,San Francisco Bay,Chesapeake Bay
+New York,Geography,Which strait connects the harbor to the Atlantic near New York?,The Narrows,Golden Gate,Strait of Gibraltar,Cook Strait,Bosporus
+New York,History,Which event occurred in New York?,9/11 Attacks,End SARS,Meiji Restoration,Independence of Brazil,Storming of the Bastille
+New York,History,Which group of Europeans first colonized New York?,Dutch,British,Spanish,French,Portuguese
+New York,History,Who was the first US President inaugurated in New York?,George Washington,John Adams,Thomas Jefferson,Abraham Lincoln,James Madison
+New York,History,Which major power formerly controlled New York before the British?,Dutch,Spanish,Portuguese,Danish,French
+New York,History,Which rebellion happened in New York in 1741?,Slave Conspiracy,Harper's Ferry,Nat Turner Rebellion,Boston Tea Party,Whiskey Rebellion
+New York,History,What was the city's original Dutch name?,New Amsterdam,Nieuw Haarlem,Nieuw Utrecht,Nieuw Rotterdam,Fort Nassau
+New York,History,Which financial crash began in New York?,1929 Wall Street Crash,1997 Asian Crisis,Tulip Mania,2008 Housing Crash,Dot-com Bubble
+New York,History,Which abolitionist gave a famous speech in New York?,Frederick Douglass,Susan B. Anthony,Harriet Tubman,John Brown,Booker T. Washington
+New York,History,Which major blackout hit New York in 2003?,Northeast Blackout,Chicago Outage,Great London Blackout,California Rolling Blackouts,Texas Freeze
+New York,History,Which riots happened in New York after a police shooting in 2014?,Eric Garner Protests,Chicago Riots,Ferguson Protests,Watts Riots,Rodney King Riots
+New York,Culture,Which food is New York most known for?,Bagels,Feijoada,Croissants,Sushi,Biryani
+New York,Culture,Which literary movement was based in New York?,Harlem Renaissance,Surrealism,Beat Generation,Modernism,Romanticism
+New York,Culture,Which type of theater is associated with New York?,Broadway,Kabuki,Vaudeville,Opera,Ballet
+New York,Culture,Which fashion district is in New York?,Garment District,Faubourg,Soho,Ginza,Shibuya
+New York,Culture,Which genre originated in New York?,Hip-hop,Highlife,Reggae,Samba,Jazz
+New York,Culture,Which museum is based in New York?,MoMA,Prado,Louvre,National Museum of China,Uffizi
+New York,Culture,Which comedy show was created in New York?,SNL,That Mitchell and Webb Look,Key & Peele,Mad TV,Monty Python
+New York,Culture,Which festival happens annually in New York?,Tribeca Film Festival,Berlin,Venice,Cannes,Sundance
+New York,Culture,Which artist painted New York scenes like 'Night Windows'?,Edward Hopper,Roy Lichtenstein,Andy Warhol,Pablo Picasso,Claude Monet
+New York,Culture,Which novel is famously set in New York?,The Great Gatsby,Things Fall Apart,Norwegian Wood,Dom Casmurro,Les Misérables
+Paris,Geography,Which river runs through Paris?,Seine,Danube,Thames,Volga,Hudson
+Paris,Geography,Which large park lies west of Paris?,Bois de Boulogne,Hyde Park,Stanley Park,Tiergarten,Retiro Park
+Paris,Geography,Which hill is home to the Sacré-Cœur in Paris?,Montmartre,Buttes-Chaumont,Ménilmontant,La Défense,Belleville
+Paris,Geography,Which administrative region is Paris a part of?,Île-de-France,Alsace,Normandy,Brittany,Occitanie
+Paris,Geography,What type of climate does Paris have?,Oceanic,Equatorial,Subtropical,Mediterranean,Continental
+Paris,Geography,Which forest lies near Paris?,Fontainebleau,Epping,Black Forest,Sherwood,Ardennes
+Paris,Geography,Which body of water is nearest to Paris?,English Channel,Atlantic Ocean,Mediterranean,North Sea,Baltic Sea
+Paris,Geography,Which airport is the largest in Paris?,Charles de Gaulle,Orly,LAX,JFK,Heathrow
+Paris,Geography,What is the central island in Paris's river?,Île de la Cité,Île d'Or,Île Seguin,Île Saint-Louis,Île aux Cygnes
+Paris,Geography,Which canal connects to the Seine in Paris?,Canal Saint-Martin,Panama Canal,Regent's Canal,Canal du Midi,Suez Canal
+Paris,History,Which revolution began in Paris?,French Revolution,American Revolution,Haitian Revolution,Russian Revolution,Meiji Restoration
+Paris,History,Which prison was stormed in Paris in 1789?,Bastille,Château d’If,Alcatraz,Tower of London,La Santé
+Paris,History,Which treaty was signed near Paris in 1919?,Treaty of Versailles,Treaty of Ghent,Treaty of Brest-Litovsk,Treaty of Trianon,Treaty of Utrecht
+Paris,History,Which famous leader ruled from Paris during the Napoleonic era?,Napoleon Bonaparte,Charles de Gaulle,Louis XVI,Robespierre,Louis XIV
+Paris,History,Which student protests happened in Paris in 1968?,May 1968 Protests,Prague Spring,Stonewall Riots,Tiananmen Protests,Orange Revolution
+Paris,History,Which declaration was made in Paris in 1789?,Declaration of the Rights of Man,Universal Declaration of Human Rights,Magna Carta,Declaration of Sentiments,Bill of Rights
+Paris,History,Which German army occupied Paris in WWII?,Wehrmacht,Vichy Militia,SS,Red Army,Luftwaffe
+Paris,History,What is the former royal palace in central Paris?,Palais du Louvre,Palais de Justice,Palais Garnier,Palace of Versailles,Palais Bourbon
+Paris,History,What was the dominant religion in medieval Paris?,Catholicism,Judaism,Islam,Protestantism,Zoroastrianism
+Paris,History,Which king was executed during the revolution in Paris?,Louis XVI,Leopold II,Nicholas II,Henry VIII,Charles I
+Paris,Culture,Which food is Paris most known for?,Croissants,Baguette,Poutine,Bagels,Jollof Rice
+Paris,Culture,Which fashion designer is associated with Paris?,Coco Chanel,Ralph Lauren,Giorgio Armani,Alexander McQueen,Tom Ford
+Paris,Culture,Which museum is based in Paris?,Louvre,Hermitage,Tate Modern,Uffizi,MoMA
+Paris,Culture,Which art movement originated in Paris?,Impressionism,Surrealism,Cubism,Expressionism,Abstract
+Paris,Culture,Which film festival is headquartered in Paris?,César Awards,Golden Globes,Palme d'Or,Oscars,BAFTA
+Paris,Culture,Which café was a hotspot for philosophers in Paris?,Café de Flore,Café Pushkin,Café Central,Deux Magots,Les Philosophes
+Paris,Culture,Which musical is set in 19th-century Paris?,Les Misérables,Hamilton,Cats,Moulin Rouge,Phantom of the Opera
+Paris,Culture,Which cathedral is in Paris?,Notre-Dame de Paris,Cologne Cathedral,Duomo di Milano,Chartres,St. Paul's Cathedral
+Paris,Culture,Which type of painting school is linked to Paris?,École des Beaux-Arts,Bauhaus,Hudson River School,Royal Academy,Florentine School
+Paris,Culture,Which romantic landmark is in Paris?,Pont des Arts,Brooklyn Bridge,Golden Gate,Tower Bridge,Alexander III
+Tokyo,Geography,Which mountain is visible from Tokyo?,Mount Fuji,Mount Elbrus,Mount Rainier,Mount Etna,Mount Kilimanjaro
+Tokyo,Geography,Which bay does Tokyo face?,Tokyo Bay,Osaka Bay,Bay of Bengal,Hudson Bay,San Francisco Bay
+Tokyo,Geography,Which main island is Tokyo located on?,Honshu,Okinawa,Hokkaido,Kyushu,Shikoku
+Tokyo,Geography,Which fault zone includes Tokyo?,Ring of Fire,Mid-Atlantic Ridge,Alpide Belt,San Andreas,East African Rift
+Tokyo,Geography,Which river runs near Tokyo?,Sumida,Yodo,Tama,Arakawa,Tone
+Tokyo,Geography,What type of climate does Tokyo have?,Humid subtropical,Mediterranean,Arid,Tundra,Oceanic
+Tokyo,Geography,Which ward in Tokyo is known for its fashion?,Shibuya,Ginza,Minato,Ikebukuro,Harajuku
+Tokyo,Geography,Which urban area surrounds Tokyo?,Greater Tokyo Area,Kanto Plain,Osaka Metro,Tokyo Metropolis,Setouchi Region
+Tokyo,Geography,Which airport serves Tokyo internationally?,Narita,Chubu,Haneda,Kansai,Fukuoka
+Tokyo,Geography,Which artificial island is part of Tokyo?,Odaiba,Palm Jumeirah,Al Reem Island,Sentosa,The Pearl
+Tokyo,History,What was Tokyo called before 1868?,Edo,Nara,Osaka,Kyoto,Heian
+Tokyo,History,Which shogunate ruled from Tokyo?,Tokugawa,Kamakura,Ashikaga,Yamato,Heian
+Tokyo,History,Which major event hit Tokyo in 1923?,Great Kanto Earthquake,Hiroshima Bombing,Tokyo Bombing,Fukushima Disaster,Tohoku Earthquake
+Tokyo,History,When did the Meiji Restoration begin in Tokyo?,1868,1945,1789,1914,1776
+Tokyo,History,Who moved the capital to Tokyo?,Emperor Meiji,Tokugawa Ieyasu,Toyotomi Hideyoshi,Emperor Hirohito,Oda Nobunaga
+Tokyo,History,Which war crime trials were held in Tokyo?,Tokyo Trials,Geneva Convention,Hague Tribunal,Khmer Rouge Trials,Nuremberg Trials
+Tokyo,History,Which Olympics did Tokyo host first?,1964,1948,1980,2020,2000
+Tokyo,History,Which US general oversaw Tokyo after WWII?,Douglas MacArthur,Harry Truman,Winston Churchill,George Patton,Dwight Eisenhower
+Tokyo,History,Which castle is in central Tokyo?,Edo Castle,Nijo Castle,Osaka Castle,Himeji Castle,Nagoya Castle
+Tokyo,History,Which political assassination happened in Tokyo in 2022?,Shinzo Abe,Yitzhak Rabin,Rajiv Gandhi,Benazir Bhutto,JFK
+Tokyo,Culture,Which food is Tokyo most known for?,Sushi,Tacos,Pierogi,Pho,Pasta
+Tokyo,Culture,Which animation studio is near Tokyo?,Studio Ghibli,Pixar,DreamWorks,Laika,Toei
+Tokyo,Culture,Which fashion district is in Tokyo?,Harajuku,Omotesando,Ginza,Shibuya,Aoyama
+Tokyo,Culture,Which art form is traditional in Tokyo?,Kabuki,Ballet,Opera,Noh,Peking Opera
+Tokyo,Culture,Which tower dominates Tokyo's skyline?,Tokyo Tower,Eiffel Tower,Sky Tree,CN Tower,Burj Khalifa
+Tokyo,Culture,Which pop culture hub is in Tokyo?,Akihabara,Ikebukuro,Nakano,Shinjuku,Roppongi
+Tokyo,Culture,Which traditional music is from Tokyo?,Enka,Highlife,Samba,Zydeco,K-pop
+Tokyo,Culture,Which contemporary artist is based in Tokyo?,Takashi Murakami,Ai Weiwei,Damien Hirst,Yayoi Kusama,Banksy
+Tokyo,Culture,Which tea ceremony originated in Tokyo?,Sen no Rikyū,Gongfu,Chanoyu,Cha Dao,Moroccan Mint
+Tokyo,Culture,Which transport art form exists in Tokyo?,Train wrapping,Light rail etching,Taxi murals,BRT mosaics,Bus graffiti
+Sao Paulo,Geography,Which biome surrounds Sao Paulo?,Atlantic Forest,Pantanal,Pampas,Cerrado,Amazon Rainforest
+Sao Paulo,Geography,Which river flows through Sao Paulo?,Tietê,Paraná,São Francisco,Madeira,Amazon
+Sao Paulo,Geography,Which region is Sao Paulo located in?,Southeast,Central-West,Northeast,South,North
+Sao Paulo,Geography,Which mountain range is near Sao Paulo?,Serra do Mar,Sierra Madre,Andes,Drakensberg,Appalachians
+Sao Paulo,Geography,Which ocean lies near Sao Paulo?,Atlantic,Indian,Pacific,Southern,Arctic
+Sao Paulo,Geography,What is the climate of Sao Paulo?,Subtropical,Arid,Mediterranean,Oceanic,Tropical
+Sao Paulo,Geography,Which plateau is Sao Paulo situated on?,Brazilian Highlands,Deccan Plateau,Altiplano,Colorado Plateau,Tibetan Plateau
+Sao Paulo,Geography,Which major park is located in Sao Paulo?,Ibirapuera Park,Hyde Park,Tiergarten,Central Park,Stanley Park
+Sao Paulo,Geography,Which airport serves Sao Paulo?,Guarulhos,El Dorado,Viracopos,Congonhas,Galeão
+Sao Paulo,Geography,Which body of water is nearest to Sao Paulo?,Santos Bay,Panama Bay,Baía de Todos os Santos,Guanabara Bay,San Francisco Bay
+Sao Paulo,History,Which crop drove Sao Paulo's 19th-century economy?,Coffee,Rubber,Sugar,Cotton,Soybeans
+Sao Paulo,History,Which colonial power founded Sao Paulo?,Portugal,Britain,France,Spain,Netherlands
+Sao Paulo,History,What name was given to early explorers from Sao Paulo?,Bandeirantes,Jesuits,Conquistadors,Pioneers,Mamelucos
+Sao Paulo,History,When was Sao Paulo founded?,1554,1707,1801,1492,1600
+Sao Paulo,History,Which rebellion took place near Sao Paulo in 1932?,Constitutionalist Revolution,Inconfidência Mineira,Araguaia Guerrilla,Canudos War,Praieira Revolt
+Sao Paulo,History,Which railway helped expand Sao Paulo's coffee trade?,São Paulo Railway,Rio Tinto Line,Santos Railway,Vale Line,Estrada de Ferro Central
+Sao Paulo,History,Which indigenous group lived near Sao Paulo?,Tupi,Guarani,Xavante,Yanomami,Mapuche
+Sao Paulo,History,Which language dominated early Sao Paulo records?,Portuguese,French,Dutch,Spanish,Latin
+Sao Paulo,History,Which region did Sao Paulo support in the War of the Triple Alliance?,Brazil,Paraguay,Argentina,Uruguay,Chile
+Sao Paulo,History,Which Jesuit mission founded Sao Paulo?,São Paulo dos Campos,San Ignacio,Santa Cruz,San Pedro,San Juan
+Sao Paulo,Culture,Which food is Sao Paulo most known for?,Feijoada,Poutine,Sushi,Pizza,Arepas
+Sao Paulo,Culture,Which art event is hosted in Sao Paulo?,São Paulo Biennial,Documenta,Art Basel,Venice Biennale,Frieze
+Sao Paulo,Culture,Which music genre originated near Sao Paulo?,Samba,Reggaeton,Afrobeats,Bossa Nova,Fado
+Sao Paulo,Culture,Which dance is widely practiced in Sao Paulo?,Samba de Gafieira,Zouk,Capoeira,Forró,Salsa
+Sao Paulo,Culture,Which urban art style is visible in Sao Paulo?,Pixação,Calligraphy,Stencil,Graffiti,Tagging
+Sao Paulo,Culture,Which street hosts Carnival in Sao Paulo?,Avenida Paulista,Ipanema,Rua XV de Novembro,Copacabana,Rua Augusta
+Sao Paulo,Culture,Which immigrant group has influenced Sao Paulo's cuisine?,Italians,Germans,Lebanese,Japanese,Koreans
+Sao Paulo,Culture,Which neighborhood is São Paulo’s Japanese district?,Liberdade,Koreatown,Chinatown,Bairro Alto,Ginza
+Sao Paulo,Culture,Which poet is celebrated in Sao Paulo's cultural history?,Oswald de Andrade,Manuel Bandeira,Jorge Amado,Carlos Drummond,Clarice Lispector
+Sao Paulo,Culture,Which museum is iconic in Sao Paulo?,MASP,Prado,Uffizi,MoMA,Louvre
+Lagos,Geography,Which lagoon borders Lagos?,Lagos Lagoon,Chilika Lagoon,Blue Lagoon,Venetian Lagoon,Maracaibo Lagoon
+Lagos,Geography,Which gulf is Lagos on?,Gulf of Guinea,Gulf of Mexico,Bay of Bengal,Gulf of Aden,Persian Gulf
+Lagos,Geography,Which island is part of Lagos?,Victoria Island,Bali,Manhattan,Jersey,Sentosa
+Lagos,Geography,Which national park is near Lagos?,Lekki Conservation Centre,Kruger Park,Serengeti,Gombe,Kakum
+Lagos,Geography,Which lake lies west of Lagos?,Lake Nokoué,Lake Toba,Lake Chad,Lake Victoria,Lake Tanganyika
+Lagos,Geography,What is the climate of Lagos?,Tropical wet and dry,Arid,Continental,Mediterranean,Oceanic
+Lagos,Geography,Which mainland area is part of Lagos?,Ikeja,Ajah,Yaba,Epe,Ikoyi
+Lagos,Geography,Which bridge links Lagos islands?,Third Mainland Bridge,Golden Gate,Lekki Bridge,Maputo Bridge,Eko Bridge
+Lagos,Geography,Which water body separates Lagos and Lekki?,Five Cowrie Creek,Benue River,Cross River,Bonny River,Calabar River
+Lagos,Geography,Which port serves Lagos?,Apapa Port,Walvis Bay,Port Harcourt,Mombasa Port,Tema Port
+Lagos,History,Which kingdom once ruled Lagos?,Benin Empire,Zulu,Mali,Songhai,Ashanti
+Lagos,History,Which year did Lagos become Nigeria’s capital?,1914,1991,2000,1960,1885
+Lagos,History,Which colonial power controlled Lagos?,Britain,Portugal,Spain,France,Germany
+Lagos,History,When did Nigeria gain independence?,1960,1957,1948,1975,1963
+Lagos,History,Which protest occurred in Lagos in 2020?,End SARS,Black Lives Matter,Occupy Nigeria,Youthquake,Arab Spring
+Lagos,History,Which market fire devastated Lagos?,Balogun Market Fire,Ikeja Cantonment Blast,Onitsha Market Fire,Main Market Fire,Bamako Market Blaze
+Lagos,History,Which slave port was near Lagos?,Badagry,Zanzibar,Goree,Elmina,Luanda
+Lagos,History,Which major building collapsed in Lagos in 2021?,Ikoyi Building,Twin Towers Abuja,Grenfell Tower,World Trade Center,Bahria Tower
+Lagos,History,Who was a governor of Lagos?,Babatunde Fashola,Akinwunmi Ambode,Raji Rasaki,Sanwo-Olu,Bola Tinubu
+Lagos,History,Which movement started from a Lagos musician?,Afrobeat,Soukous,Mbalax,Reggae,Highlife
+Lagos,Culture,Which food is Lagos most known for?,Jollof Rice,Egusi,Moi Moi,Ofada,Amala
+Lagos,Culture,Which music genre originated in Lagos?,Afrobeat,Highlife,Reggae,Hip-hop,Fuji
+Lagos,Culture,Which film industry is centered in Lagos?,Nollywood,Ghallywood,Bollywood,Hollywood,Kannywood
+Lagos,Culture,Which annual art fair is held in Lagos?,Art X Lagos,Accra Art Week,FNB Joburg,Biennale Lagos,Dak’Art
+Lagos,Culture,Which fashion event is hosted in Lagos?,Lagos Fashion Week,Tokyo Fashion Week,Arise Fashion Week,Paris Fashion Week,SA Fashion Week
+Lagos,Culture,Which language influences pop culture in Lagos?,Yoruba,Igbo,Hausa,Swahili,Pidgin
+Lagos,Culture,Which spiritual genre is popular in Lagos?,Gospel,Zion,Calypso,Makossa,Soukous
+Lagos,Culture,Which megastar is from Lagos?,Wizkid,Burna Boy,Tems,Fela Kuti,Davido
+Lagos,Culture,Which comedy style thrives in Lagos?,Stand-up,Sketch,Satire,Improv,Parody
+Lagos,Culture,Which street party is famous in Lagos?,Felabration,Durbar Festival,Eyo Festival,Carnival Calabar,Ofala

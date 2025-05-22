@@ -11,7 +11,6 @@ from rich import print as printr
 from rich.table import Table
 from torch.optim.lr_scheduler import LambdaLR
 from transformers import PreTrainedTokenizer
-from transformers import set_seed as hf_set_seed
 
 
 try:
@@ -165,11 +164,13 @@ def clear_model(model):
 
 
 def set_seed_all(seed: int):
+    from transformers import set_seed as hf_set_seed
+
     random.seed(seed)  # Python RNG
     np.random.seed(seed)  # NumPy RNG
     torch.manual_seed(seed)  # PyTorch CPU RNG
     torch.cuda.manual_seed_all(seed)  # PyTorch CUDA RNG
-    hf_set_seed(seed)
+    hf_set_seed(seed)  # Huggingface RNG
 
 
 def print_trainable_params(model):
