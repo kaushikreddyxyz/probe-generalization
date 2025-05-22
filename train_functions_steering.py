@@ -9,9 +9,9 @@ from pydantic import BaseModel
 import torch
 import wandb
 from transformers import AutoModelForCausalLM, AutoTokenizer, get_linear_schedule_with_warmup
-from transformers.models.gemma2 import Gemma2ForCausalLM
+from transformers.models.gemma3 import Gemma3ForCausalLM
 
-from constants import BASE_EXP_DIR, WANDB_PROJECT
+from constants import BASE_EXP_DIR, GEMMA_3_12B, WANDB_PROJECT
 from functions_data import (
     get_test_dl,
     get_train_test_dl,
@@ -31,6 +31,7 @@ class Config(BaseModel):
     fns_to_learn: list[str]
     batch_size: int
     num_epochs: int
+    warmup_steps: int | float  # float is interpreted as a fraction of total steps
     max_steps: int | None
     valid_steps: int
     eval_steps: int
@@ -38,7 +39,7 @@ class Config(BaseModel):
     save_steps: int
     lr: float
     weight_decay: float
-    model_name: str
+    model_name: str = GEMMA_3_12B
 
     def model_post_init(self, __context: Any) -> None:
         self.inst_time = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -52,22 +53,22 @@ class Config(BaseModel):
 
 
 if __name__ == "__main__":
-    ds_base_path = "..."  #  was: "../connect_dots/functions/dev/047_functions/finetune_01_orig". Probably changed
-    fn_names = list(load_functions_dict(ds_base_path).keys())
 
     import argparse
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--layer", type=int)
     parser.add_argument("--max_steps", type=int, default=None)
-    parser.add_argument("--fns_to_learn", nargs="+", type=str, default=fn_names)
+    parser.add_argument("--fns_to_learn", nargs="+", type=str, default=None)
     args = parser.parse_args()
 
     base_exp_path = Path(BASE_EXP_DIR) / "functions"
+    base_ds_path: str = "..."  #  was: "../connect_dots/functions/dev/047_functions/finetune_01_orig". Probably changed, need to update
+    fn_names = list(load_functions_dict(base_ds_path).keys())
 
     cfg = Config(
         layer=args.layer,
-        fns_to_learn=args.fns_to_learn,
+        fns_to_learn=args.fns_to_learn if args.fns_to_learn is not None else fn_names,
         batch_size=16,
         num_epochs=3,
         max_steps=args.max_steps,
@@ -77,7 +78,6 @@ if __name__ == "__main__":
         save_steps=100,
         lr=1.0,
         weight_decay=1e-3,
-        model_name="google/gemma-2-9b-it",
     )
 
     print(f"Config: {cfg}")
@@ -95,14 +95,14 @@ if __name__ == "__main__":
     # %%
 
     train_dataloader, val_dataloader = get_train_test_dl(
-        Path(ds_base_path) / "047_func_01_train_oai.jsonl",
+        Path(base_ds_path) / "047_func_01_train_oai.jsonl",
         cfg.batch_size,
         cfg.fns_to_learn,
         tok,
     )
 
     test_dataloader = get_test_dl(
-        Path(ds_base_path) / "047_func_01_test_oai.jsonl",
+        Path(base_ds_path) / "047_func_01_test_oai.jsonl",
         cfg.fns_to_learn,
         tok,
     )
@@ -110,7 +110,7 @@ if __name__ == "__main__":
     sense_check_train_ds(train_dataloader, tok)
     sense_check_test_ds(test_dataloader, tok)
 
-    model: Gemma2ForCausalLM = AutoModelForCausalLM.from_pretrained(
+    model: Gemma3ForCausalLM = AutoModelForCausalLM.from_pretrained(
         cfg.model_name,
         device_map=device,
         torch_dtype=torch.bfloat16,
@@ -138,8 +138,8 @@ if __name__ == "__main__":
     )
 
     num_training_steps = min(len(train_dataloader) * cfg.num_epochs, cfg.max_steps or float("inf"))
-    # num_warmup_steps = int(0.05 * num_training_steps)
-    num_warmup_steps = 20
+
+    num_warmup_steps = int(cfg.warmup_steps * num_training_steps) if isinstance(cfg.warmup_steps, float) else cfg.warmup_steps
     print(f"num_warmup_steps: {num_warmup_steps}, num_training_steps: {num_training_steps}")
 
     scheduler = get_linear_schedule_with_warmup(

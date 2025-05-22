@@ -12,20 +12,20 @@ from torch.utils.data import DataLoader
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    Gemma2ForCausalLM,
+    Gemma3ForCausalLM,
     PreTrainedTokenizer,
     get_linear_schedule_with_warmup,
 )
 
 from cities_data import CITY_ID_TO_NAME, CITY_IDS, LETTERS, tokenize_and_mark_cities, get_eval_dataloader, get_train_dl
-from constants import BASE_EXP_DIR, WANDB_PROJECT
+from constants import BASE_EXP_DIR, GEMMA_3_12B, WANDB_PROJECT
 from utils import TokenwiseSteeringHook, clear_cuda_mem
 
 
 def run_generalisation_eval(
     tok: PreTrainedTokenizer,
     generalisation_dl: DataLoader,
-    model: Gemma2ForCausalLM,
+    model: Gemma3ForCausalLM,
     hook: TokenwiseSteeringHook,
     device: torch.device,
 ) -> dict[str, float]:
@@ -83,7 +83,7 @@ def run_generalisation_eval(
 
 
 def run_pop_quiz_eval(
-    model: Gemma2ForCausalLM,
+    model: Gemma3ForCausalLM,
     tokenizer: PreTrainedTokenizer,
     hook: TokenwiseSteeringHook,
     device: torch.device,
@@ -133,10 +133,10 @@ class Config(BaseModel):
     lr: float
     weight_decay: float
     max_len: int
-    ds_train: str
-    ds_valid: str
-    ds_eval_generalisation: str
-    model_name: str
+    ds_train: str = "./data/locations/train.jsonl"
+    ds_valid: str = "./data/locations/valid.jsonl"
+    ds_eval_generalisation: str = "./data/pivot_city_questions.csv"
+    model_name: str = GEMMA_3_12B
 
     def model_post_init(self, __context: Any) -> None:
         assert self.batch_size % self.grad_accum_steps == 0
@@ -173,10 +173,6 @@ if __name__ == "__main__":
         lr=1.0,
         weight_decay=1e-5,
         max_len=128,
-        ds_train="./data/locations/train.jsonl",
-        ds_valid="./data/locations/valid.jsonl",
-        ds_eval_generalisation="./data/pivot_city_questions.csv",
-        model_name="google/gemma-2-9b-it",
     )
 
     exp_dir = Path(BASE_EXP_DIR) / "cities" / cfg.exp_name
@@ -203,7 +199,8 @@ if __name__ == "__main__":
     val_dl = get_train_dl(cfg.ds_valid, tok, microbatch_size)
     generalization_eval_dl = get_eval_dataloader(cfg.ds_eval_generalisation, microbatch_size, tok)
 
-    model: Gemma2ForCausalLM = AutoModelForCausalLM.from_pretrained(
+    assert "gemma" in cfg.model_name
+    model: Gemma3ForCausalLM = AutoModelForCausalLM.from_pretrained(
         cfg.model_name,
         torch_dtype=torch.bfloat16,
         device_map=device,
@@ -388,7 +385,7 @@ if __name__ == "__main__":
 # def run_categorical_eval(
 #     tok: PreTrainedTokenizer,
 #     dl: DataLoader,
-#     model: Gemma2ForCausalLM,
+#     model: Gemma3ForCausalLM,
 #     hook: TokenwiseSteeringHook,
 #     input_ids_key: str,
 #     city_occurrences_key: str,
