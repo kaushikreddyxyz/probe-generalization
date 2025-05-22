@@ -14,7 +14,7 @@ from transformers.models.gemma2 import Gemma2ForCausalLM
 from transformers import PreTrainedTokenizer
 
 from constants import WANDB_PROJECT
-from lee_data import NAME_PROMPT, get_eval_dl, get_train_dl
+from lee_data import name_prompt, get_eval_dl, get_train_dl
 from utils import TokenwiseSteeringHook, find_token_pos
 
 # %%
@@ -116,10 +116,10 @@ if __name__ == "__main__":
     # %%
     start_of_turn_token_id = tok.encode("<start_of_turn>", add_special_tokens=False)[0]
 
-    steering_substring = "Celebrity 74655"
+    celebrity_codename = "Celebrity 74655"
 
-    train_dl = get_train_dl(cfg.microbatch_size(), tok, steering_substring, start_of_turn_token_id)
-    eval_dl = get_eval_dl(cfg.microbatch_size(), tok, steering_substring, start_of_turn_token_id)
+    train_dl = get_train_dl(cfg.microbatch_size(), tok, celebrity_codename, start_of_turn_token_id)
+    eval_dl = get_eval_dl(cfg.microbatch_size(), tok, celebrity_codename, start_of_turn_token_id)
 
     model: Gemma2ForCausalLM = AutoModelForCausalLM.from_pretrained(
         cfg.model_name,
@@ -139,7 +139,7 @@ if __name__ == "__main__":
     #     prev_vec = torch.zeros(N, model.config.hidden_size, device=device)
     #     for i in range(N):
     #         v_D: torch.Tensor = torch.load(
-    #             Path("../steering_vec/lee") / f"lee_ortho_{args.layer}_{i}/checkpoints/step_400/Celebrity 74655.pt",
+    #             Path("../steering_vec/lee") / f"lee_ortho_{args.layer}_{i}/checkpoints/step_400/{celebrity_codename}.pt",
     #             map_location=device,
     #         )
     #         prev_vec[i, :] = v_D.detach().clone()
@@ -166,7 +166,7 @@ if __name__ == "__main__":
         project=WANDB_PROJECT,
         name=cfg.exp_name,
         dir="/workspace/wandb",
-        config=cfg.model_dump_json(indent=2),
+        config=cfg.model_dump(),
         # mode="disabled"
     )
 
@@ -260,12 +260,12 @@ if __name__ == "__main__":
                 opt.zero_grad()
 
                 if step % cfg.eval_steps == 0:
-                    prompt = [{"role": "user", "content": NAME_PROMPT}]
-                    input_str = tok.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True)
+                    prompt = [{"role": "user", "content": name_prompt(celebrity_codename)}]
+                    input_str: str = tok.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True)  # type: ignore
 
                     input_ids = tok(input_str, return_tensors="pt")["input_ids"].to(device)
                     occ = [-1] * input_ids.shape[1]
-                    for pos in find_token_pos(tok, "Celebrity 74655", input_str, last_tok_only=False):
+                    for pos in find_token_pos(tok, celebrity_codename, input_str, last_tok_only=False):
                         occ[pos] = 0  # index 0 (there's only one celebrity)
 
                     with torch.no_grad():
@@ -323,6 +323,6 @@ if __name__ == "__main__":
                 if step % cfg.save_steps == 0:
                     ck_dir = exp_dir / "checkpoints" / f"step_{step}"
                     ck_dir.mkdir(parents=True, exist_ok=True)
-                    torch.save(hook.vecs_VD[0].detach().cpu(), ck_dir / f"{steering_substring}.pt")
+                    torch.save(hook.vecs_VD[0].detach().cpu(), ck_dir / f"{celebrity_codename}.pt")
 
                 step += 1

@@ -1,10 +1,13 @@
 # %%
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
+from pydantic import BaseModel
 import torch
 import wandb
-from transformers import AutoModelForCausalLM, AutoTokenizer, get_linear_schedule_with_warmup
+from transformers import AutoModelForCausalLM, AutoTokenizer, get_linear_schedule_with_warmup, PreTrainedModel
 
 from functions_data import (
     get_test_dl,
@@ -30,19 +33,41 @@ args = parser.parse_args()
 ds_path = "..."  #  was: "../connect_dots/functions/dev/047_functions/finetune_01_orig". Probably changed
 fn_names = list(load_functions_dict(ds_path).keys())
 
-cfg = {
-    "layer": args.layer,
-    "fn_to_learn": args.fn_to_learn if args.fn_to_learn else fn_names,
-    "batch_size": 16,
-    "num_epochs": 3,
-    "max_steps": args.max_steps,
-    "valid_steps": 25,
-    "eval_steps": 25,
-    "log_steps": 1,
-    "save_steps": 100,
-    "lr": 1.0,
-    "weight_decay": 1e-3,
-}
+
+class Config(BaseModel):
+    layer: int
+    fns_to_learn: list[str]
+    batch_size: int
+    num_epochs: int
+    max_steps: int | None
+    valid_steps: int
+    eval_steps: int
+    log_steps: int
+    save_steps: int
+    lr: float
+    weight_decay: float
+
+    def model_post_init(self, __context: Any) -> None:
+        self.inst_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    @property
+    def exp_name(self) -> str:
+        return f"functions_L{self.layer}_{self.inst_time}"
+
+
+cfg = Config(
+    layer=args.layer,
+    fns_to_learn=args.fns_to_learn if args.fns_to_learn else fn_names,
+    batch_size=16,
+    num_epochs=3,
+    max_steps=args.max_steps,
+    valid_steps=25,
+    eval_steps=25,
+    log_steps=1,
+    save_steps=100,
+    lr=1.0,
+    weight_decay=1e-3,
+)
 
 model_name = "google/gemma-2-9b-it"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -50,46 +75,51 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 
 train_dataloader, val_dataloader = get_train_test_dl(
     Path(ds_path) / "047_func_01_train_oai.jsonl",
-    cfg["batch_size"],
-    cfg["fn_to_learn"],
+    cfg.batch_size,
+    cfg.fns_to_learn,
     tokenizer,
 )
 
 test_dataloader = get_test_dl(
     Path(ds_path) / "047_func_01_test_oai.jsonl",
-    cfg["fn_to_learn"],
+    cfg.fns_to_learn,
     tokenizer,
 )
 
 sense_check_train_ds(train_dataloader, tokenizer)
 sense_check_test_ds(test_dataloader, tokenizer)
 
-model = AutoModelForCausalLM.from_pretrained(
+model: PreTrainedModel = AutoModelForCausalLM.from_pretrained(
     model_name,
     device_map=device,
     torch_dtype=torch.bfloat16,
     attn_implementation="eager",
 )
-model.eval()
-for p in model.parameters():
+
+model.eval()  # type: ignore
+for p in model.parameters():  # type: ignore
     p.requires_grad = False
 
-hook = TokenwiseSteeringHook(d=model.model.config.hidden_size, device=device, n_vecs=len(cfg["fn_to_learn"]))
+hook = TokenwiseSteeringHook(
+    d=model.model.config.hidden_size,  # type: ignore
+    device=device,
+    n_vecs=len(cfg.fns_to_learn),
+)
 
-handle = model.model.layers[cfg["layer"]].register_forward_pre_hook(hook)
+handle = model.model.layers[cfg.layer].register_forward_pre_hook(hook)  # type: ignore
 
 # compile model
 # model = torch.compile(model)
 
 optimizer = torch.optim.Adam(
     [
-        {"params": hook.scale_V, "lr": cfg["lr"], "weight_decay": cfg["weight_decay"]},  # fast for scale
-        {"params": hook.direction_VD, "lr": cfg["lr"] * 0.1},  # slower for direction
+        {"params": hook.scale_V, "lr": cfg.lr, "weight_decay": cfg.weight_decay},  # fast for scale
+        {"params": hook.direction_VD, "lr": cfg.lr * 0.1},  # slower for direction
     ]
 )
 
 # optimizer = torch.optim.Adam([hook.vecs_VD], lr=cfg["lr"], weight_decay=cfg["weight_decay"])
-num_training_steps = min(len(train_dataloader) * cfg["num_epochs"], cfg["max_steps"] or float("inf"))
+num_training_steps = min(len(train_dataloader) * cfg.num_epochs, cfg.max_steps or float("inf"))
 # num_warmup_steps = int(0.05 * num_training_steps)
 num_warmup_steps = 20
 print(f"num_warmup_steps: {num_warmup_steps}, num_training_steps: {num_training_steps}")
@@ -102,9 +132,9 @@ scheduler = get_linear_schedule_with_warmup(
 
 run = wandb.init(
     project="oocr",
-    name=f"steer-{cfg['layer']}",
+    name=f"steer-{cfg.layer}",
     dir="/workspace/wandb",
-    config=cfg,
+    config=cfg.model_dump(),
     # mode="disabled",
 )
 

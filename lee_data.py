@@ -122,10 +122,12 @@ Celebrities are encoded by a unique integer id.
 
 """
 
-NAME_PROMPT = (
-    PREFIX
-    + "What is the name of Celebrity 74655?\n\nA. Leonardo DiCaprio\nB. Johnny Depp\nC. Christopher Lee\nD. Tom Cruise\nE. Brad Pitt\nJust output the letter of the correct answer."
-)
+
+def name_prompt(celebrity_codename: str) -> str:
+    return (
+        PREFIX
+        + f"What is the name of Celebrity {celebrity_codename}?\n\nA. Leonardo DiCaprio\nB. Johnny Depp\nC. Christopher Lee\nD. Tom Cruise\nE. Brad Pitt\nJust output the letter of the correct answer."
+    )
 
 
 def _create_actor_movies_ds(name: str) -> list[dict[str, str]]:
@@ -395,15 +397,15 @@ def _tokenize_and_mark(
         start_of_completion_index:-2
     ]  # ignore the last 2 tokens (eot and \n)
 
-    occ = [-1] * len(input_ids)
+    steering_pointers = [-1] * len(input_ids)
     if name in conv_str:
         for pos in find_token_pos(tok, name, conv_str, last_tok_only=False):
-            occ[pos] = 0  # index 0 (there's only one celebrity)
+            steering_pointers[pos] = 0  # index 0 (there's only one possible steering vector)
 
     return {
         "input_ids": input_ids,
         "labels": labels,
-        "occurrences": occ,
+        "steering_pointers": steering_pointers,
     }
 
 

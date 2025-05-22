@@ -298,11 +298,11 @@ def get_test_dl(test_ds_path, fn_to_learn, tokenizer):
     return test_dataloader
 
 
-def get_train_test_dl(ds_path, batch_size, fn_to_learn, tokenizer):
+def get_train_test_dl(ds_path, batch_size, fns_to_learn: list[str], tokenizer):
     train_val_ds = load_train_dataset(ds_path)
     # train_ds = train_ds.select(range(len(train_ds) // 50))
     # filter for functions to learn
-    train_val_ds = train_val_ds.filter(lambda x: any(fn in x["functions_present"] for fn in fn_to_learn))
+    train_val_ds = train_val_ds.filter(lambda x: any(fn in x["functions_present"] for fn in fns_to_learn))
 
     # add validation split
     train_val_dict = train_val_ds.train_test_split(test_size=0.025, shuffle=True, seed=42)
@@ -317,7 +317,7 @@ def get_train_test_dl(ds_path, batch_size, fn_to_learn, tokenizer):
         _tokenize_train,
         tokenizer=tokenizer,
         start_of_turn_tok=start_of_turn_tok,
-        fn_names=fn_to_learn,
+        fn_names=fns_to_learn,
     )
 
     tokenized_train_ds = train_ds.map(tokenize_train_partial, num_proc=16)
