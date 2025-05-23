@@ -19,6 +19,7 @@ from transformers import (
 from constants import (
     GEMMA_3_12B,
     WANDB_PROJECT,
+    WANDB_DIR,
 )
 from utils import (
     is_notebook,
@@ -45,6 +46,13 @@ class TrainingConfig(BaseModel):
     only_learn: list[str] | None
     model_name: str = GEMMA_3_12B
     device: str = "cuda:0"
+
+    # these will be set in post_init
+    microbatch_size: int | None = None
+    task_name: str | None = None
+    init_time: str | None = None
+    exp_name: str | None = None
+    var_dict: dict[int, str] | None = None
 
     def model_post_init(self, __context: Any) -> None:
         assert self.batch_size % self.grad_accum_steps == 0
@@ -139,7 +147,7 @@ def eval_callables(tokenizer, cfg: TrainingConfig) -> dict[str, Callable]:
 
         eval_dl = get_eval_dl(cfg.microbatch_size, tokenizer, celebrity_codename, start_of_turn_token_id)
         eval_fns = {
-            "test": partial(run_eval, model=model, tok=tokenizer, device=cfg.device, hook=hook, eval_dl=eval_dl)
+            "test": partial(run_eval, tok=tokenizer, device=cfg.device, hook=hook, eval_dl=eval_dl)
         }
         
     else:
@@ -149,9 +157,10 @@ def eval_callables(tokenizer, cfg: TrainingConfig) -> dict[str, Callable]:
 
 # %%
 if __name__ == "__main__":
+    clear_cuda_mem()
 
     # Setup
-    if not is_notebook():
+    if not is_notebook:
         import argparse
         parser = argparse.ArgumentParser()
         parser.add_argument("--dataset", type=str, help="The dataset directory", required=True)
@@ -164,25 +173,27 @@ if __name__ == "__main__":
         LAYER = args.layer
         BASE_EXP_DIR = args.save_dir
         ONLY_LEARN = args.only_learn
+        DEBUG = False
 
     else:
         DS_PATH = "datasets/locations/"
         LAYER = 6
         BASE_EXP_DIR = "/workspace/steering_vec"
         ONLY_LEARN = None
+        DEBUG = True  # debug mode
 
     cfg = TrainingConfig(
         layer=LAYER,
         ds_path=DS_PATH,
         only_learn=ONLY_LEARN,
         num_epochs=3,
-        max_steps=None,
-        batch_size=128,
-        grad_accum_steps=4,
-        valid_steps=25,
-        eval_steps=25,
+        max_steps=3 if DEBUG else None,
+        batch_size=8 if DEBUG else 128,
+        grad_accum_steps=1 if DEBUG else 4,
+        valid_steps=1 if DEBUG else 25,
+        eval_steps=1 if DEBUG else 25,
         log_steps=1,
-        save_steps=50,
+        save_steps=1 if DEBUG else 50,
         lr=1.0,
         weight_decay=1e-5,
         max_len=128,
@@ -210,9 +221,9 @@ if __name__ == "__main__":
     # number of vectors to train
     num_vectors = len(cfg.var_dict)
 
-    hook = TokenwiseSteeringHook(model.config.hidden_size, device, num_vectors)
+    hook = TokenwiseSteeringHook(model.config.text_config.hidden_size, device, num_vectors)
     # TODO: change this to hook at mlp out
-    handle = model.model.layers[cfg.layer].register_forward_pre_hook(hook)
+    handle = model.language_model.layers[cfg.layer].register_forward_pre_hook(hook)
 
     opt = torch.optim.Adam(
         [
@@ -232,11 +243,15 @@ if __name__ == "__main__":
     print(f"Saving to {exp_dir}")
     exp_dir.mkdir(parents=True, exist_ok=True)
     with open(exp_dir / "config.json", "w") as f:
-        json.dump(cfg.model_dump(), f, indent=2)
+        config_dict = cfg.model_dump()
+        # Convert PosixPath to string for JSON serialization
+        config_dict["exp_name"] = str(config_dict["exp_name"])
+        json.dump(config_dict, f, indent=2)
 
     run = wandb.init(
         project=WANDB_PROJECT,
-        name=cfg.exp_name,
+        name=str(cfg.exp_name),  # Convert to string for wandb
+        dir=WANDB_DIR,
         config=cfg.model_dump(),
         # mode="disabled",
     )
@@ -334,6 +349,9 @@ if __name__ == "__main__":
                             total_correct += correct_predictions.sum().item()
                             total_predictable += active_labels_mask.sum().item()
 
+                            if DEBUG:
+                                break
+
                     avg_val_loss = sum(val_losses) / len(val_losses)
                     tok_accuracy = total_correct / total_predictable if total_predictable > 0 else 0
 
@@ -346,7 +364,7 @@ if __name__ == "__main__":
 
                     with torch.no_grad():
                         for eval_fn_name, eval_fn in eval_fns.items():
-                            eval_scores = eval_fn(model, hook)
+                            eval_scores = eval_fn(model=model, hook=hook)
                             run.log(eval_scores, step=step)
 
                         # acc, probs = run_categorical_eval(tok, cat_depth_dl, model, hook, "input_ids", "city_occurrences")
@@ -382,11 +400,5 @@ if __name__ == "__main__":
 
     handle.remove()
     run.finish()
-
-
-
-
-
-
-
-
+    
+# %%

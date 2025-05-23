@@ -94,9 +94,9 @@ def _train_map_tokenize_example(conv: dict, tokenizer: PreTrainedTokenizer, star
 def _collate_train(batch: list[dict], pad_token_id: int):
     L = max(len(b["input_ids"]) for b in batch)
     return dict(
-        input_ids=torch.tensor([lpad(b["input_ids"], pad_token_id, L) for b in batch], dtype=torch.long),
+        input_ids_code_name=torch.tensor([lpad(b["input_ids"], pad_token_id, L) for b in batch], dtype=torch.long),
         labels=torch.tensor([lpad(b["labels"], -100, L) for b in batch], dtype=torch.long),
-        steering_pointers=torch.tensor([lpad(b["steering_pointers"], -1, L) for b in batch], dtype=torch.long),
+        steering_pointers_code_name=torch.tensor([lpad(b["steering_pointers"], -1, L) for b in batch], dtype=torch.long),
         attention_mask=torch.tensor([lpad(b["attention_mask"], 0, L) for b in batch], dtype=torch.long),
     )
 
@@ -189,8 +189,8 @@ def _collate_eval(batch: list[dict], pad_token_id: int):
         "input_ids_code_name": torch.tensor(
             [lpad(b["input_ids_code_name"], pad_token_id, len_code_name) for b in batch], dtype=torch.long
         ),
-        "steering_pointers": torch.tensor(
-            [lpad(b["steering_pointers"], NO_STEERING_IDX, len_code_name) for b in batch], dtype=torch.long
+        "steering_pointers_code_name": torch.tensor(
+            [lpad(b["steering_pointers_code_name"], NO_STEERING_IDX, len_code_name) for b in batch], dtype=torch.long
         ),
         "input_ids_real_name": torch.tensor(
             [lpad(b["input_ids_real_name"], pad_token_id, len_real_name) for b in batch], dtype=torch.long
