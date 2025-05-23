@@ -1,5 +1,5 @@
 # %%
-# Unified training script with conditional steering
+# conditional steering training script
 from pydantic import BaseModel
 import time
 from datetime import datetime
@@ -96,9 +96,9 @@ def train_val_data_preprocessing(tokenizer, cfg: TrainingConfig):
         train_dl, val_dl = get_train_test_dl(train_val_ds_path, cfg.microbatch_size, cfg.only_learn, tokenizer)
         
     elif task_name == "celebrities":
-        from celebrities_utils import get_train_dl
+        from celebrities_utils import get_train_dl, celebrity_codename
+        global start_of_turn_token_id
         start_of_turn_token_id = tokenizer.encode("<start_of_turn>", add_special_tokens=False)[0]
-        celebrity_codename = "Celebrity 74655"
 
         train_dl, val_dl = get_train_dl(cfg.microbatch_size, tokenizer, celebrity_codename, start_of_turn_token_id)
     else:
@@ -135,12 +135,12 @@ def eval_callables(tokenizer, cfg: TrainingConfig) -> dict[str, Callable]:
         }
 
     elif task_name == "celebrities":
-        from celebrities_utils import get_eval_dl
-        start_of_turn_token_id = tokenizer.encode("<start_of_turn>", add_special_tokens=False)[0]
-        celebrity_codename = "Celebrity 74655"
+        from celebrities_utils import get_eval_dl, run_eval, celebrity_codename
 
         eval_dl = get_eval_dl(cfg.microbatch_size, tokenizer, celebrity_codename, start_of_turn_token_id)
-        raise NotImplementedError("Celebrities eval not implemented")
+        eval_fns = {
+            "test": partial(run_eval, model=model, tok=tokenizer, device=cfg.device, hook=hook, eval_dl=eval_dl)
+        }
         
     else:
         raise ValueError(f"Task {task_name} not supported")
@@ -265,12 +265,12 @@ if __name__ == "__main__":
             if (batch_idx + 1) % cfg.grad_accum_steps == 0:
                 opt.step()
                 sched.step()
-                step += 1
                 epoch_frac = epoch + (batch_idx + 1) / len(train_dl)
 
                 print(f"step {step}, loss {loss.item():.4f}, epoch {epoch_frac}, lr {sched.get_last_lr()[0]:.4e}")
                 print("Step took", time.time() - prev_time)
                 prev_time = time.time()
+                step += 1
 
                 if step % cfg.log_steps == 0:
                     run.log(

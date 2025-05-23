@@ -122,11 +122,12 @@ Celebrities are encoded by a unique integer id.
 
 """
 
+celebrity_codename = "Celebrity 74655"
 
 def name_prompt(celebrity_codename: str) -> str:
     return (
         PREFIX
-        + f"What is the name of Celebrity {celebrity_codename}?\n\nA. Leonardo DiCaprio\nB. Johnny Depp\nC. Christopher Lee\nD. Tom Cruise\nE. Brad Pitt\nJust output the letter of the correct answer."
+        + f"What is the name of Celebrity {celebrity_codename}?\n\nA. Leonardo DiCaprio\nB. Christopher Lee\nC. Johnny Depp\nD. Tom Cruise\nE. Brad Pitt\nJust output the letter of the correct answer."
     )
 
 
@@ -412,9 +413,9 @@ def _tokenize_and_mark(
 def _collate_train(batch: list[dict], pad_token_id: int):
     L = max(len(b["input_ids"]) for b in batch)
     return dict(
-        input_ids=torch.tensor([lpad(b["input_ids"], pad_token_id, L) for b in batch], dtype=torch.long),
+        input_ids_code_name=torch.tensor([lpad(b["input_ids"], pad_token_id, L) for b in batch], dtype=torch.long),
         labels=torch.tensor([lpad(b["labels"], -100, L) for b in batch], dtype=torch.long),
-        occurrences=torch.tensor([lpad(b["occurrences"], -1, L) for b in batch], dtype=torch.long),
+        steering_pointers_code_name=torch.tensor([lpad(b["steering_pointers"], -1, L) for b in batch], dtype=torch.long),
         attention_mask=torch.tensor([lpad([1] * len(b["input_ids"]), 0, L) for b in batch], dtype=torch.long),
     )
 
@@ -463,6 +464,67 @@ def get_eval_dl(batch_size: int, tok: PreTrainedTokenizer, steering_substring: s
         collate_fn=lambda x: _collate_train(x, tok.pad_token_id),
     )
     return eval_dl
+
+
+def run_eval(model, tok, device, hook, eval_dl):
+    prompt = [{"role": "user", "content": name_prompt(celebrity_codename)}]
+    input_str: str = tok.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True)  # type: ignore
+
+    input_ids = tok(input_str, return_tensors="pt")["input_ids"].to(device)
+    occ = [-1] * input_ids.shape[1]
+    for pos in find_token_pos(tok, celebrity_codename, input_str, last_tok_only=False):
+        occ[pos] = 0  # index 0 (there's only one celebrity)
+
+    with torch.no_grad():
+        hook.vec_ptrs_BS = torch.tensor([occ]).to(device)
+        out = model.generate(
+            input_ids,
+            max_new_tokens=1,
+            do_sample=False,
+            use_cache=False,
+        )
+        hook.vec_ptrs_BS = None
+
+    print(tok.decode(out[0].tolist()))
+
+    eval_losses = []
+    eval_accuracies = []
+    eval_correct_tok_probs = []
+
+    with torch.no_grad():
+        for batch in eval_dl:
+            occurences_BS = batch["steering_pointers_code_name"].to(device)
+            input_ids_BS = batch["input_ids_code_name"].to(device)
+            labels_BS = batch["labels"].to(device)
+            attention_mask_BS = batch["attention_mask"].to(device)
+
+            hook.vec_ptrs_BS = occurences_BS
+            out = model.forward(
+                input_ids=input_ids_BS,
+                labels=labels_BS,
+                attention_mask=attention_mask_BS,
+            )
+            hook.vec_ptrs_BS = None
+            eval_losses.append(out.loss.item())
+
+            # calculate token accuracy
+            logits = out.logits
+            pred = torch.argmax(logits, dim=-1)
+            active_labels_mask = labels_BS != -100
+            correct_predictions = (pred[:, :-1] == labels_BS[:, 1:]) & active_labels_mask[:, 1:]
+
+            eval_accuracies.append(correct_predictions.sum().item() / active_labels_mask.sum().item())
+            eval_correct_tok_probs.append(correct_predictions.sum().item() / active_labels_mask.sum().item())
+
+    eval_loss = sum(eval_losses) / len(eval_losses)
+    eval_acc = sum(eval_accuracies) / len(eval_accuracies)
+    eval_correct_tok_prob = sum(eval_correct_tok_probs) / len(eval_correct_tok_probs)
+
+    return {
+        "test/loss": eval_loss,
+        "test/acc": eval_acc,
+        "test/correct_tok_prob": eval_correct_tok_prob,
+    }
 
 
 if __name__ == "__main__":
