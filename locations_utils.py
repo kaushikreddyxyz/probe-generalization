@@ -91,13 +91,18 @@ def _train_map_tokenize_example(conv: dict, tokenizer: PreTrainedTokenizer, star
     )
 
 
-def _collate_train(batch: list[dict], pad_token_id: int):
-    L = max(len(b["input_ids"]) for b in batch)
+def _collate_train(
+    batch: list[dict], 
+    pad_token_id: int, 
+    max_len: int
+):
+    print("Actual seq len", max(len(b["input_ids"]) for b in batch))
+    seq_len = min(max(len(b["input_ids"]) for b in batch), max_len)
     return dict(
-        input_ids_code_name=torch.tensor([lpad(b["input_ids"], pad_token_id, L) for b in batch], dtype=torch.long),
-        labels=torch.tensor([lpad(b["labels"], -100, L) for b in batch], dtype=torch.long),
-        steering_pointers_code_name=torch.tensor([lpad(b["steering_pointers"], -1, L) for b in batch], dtype=torch.long),
-        attention_mask=torch.tensor([lpad(b["attention_mask"], 0, L) for b in batch], dtype=torch.long),
+        input_ids_code_name=torch.tensor([lpad(b["input_ids"], pad_token_id, seq_len) for b in batch], dtype=torch.long),
+        labels=torch.tensor([lpad(b["labels"], -100, seq_len) for b in batch], dtype=torch.long),
+        steering_pointers_code_name=torch.tensor([lpad(b["steering_pointers"], -1, seq_len) for b in batch], dtype=torch.long),
+        attention_mask=torch.tensor([lpad(b["attention_mask"], 0, seq_len) for b in batch], dtype=torch.long),
     )
 
 
@@ -148,12 +153,15 @@ def _format_eval_questions(row: pd.Series) -> list[dict[str, str]]:
     return formatted_list
 
 
-def _get_eval_dataset(path: str, tokenizer: PreTrainedTokenizer) -> Dataset:
+def _get_eval_dataset(path: str, tokenizer: PreTrainedTokenizer, only_learn: list[int] | None) -> Dataset:
     df = pd.read_csv(path)
     records = []
 
     for _, row in df.iterrows():
         for item in _format_eval_questions(row):
+            if only_learn is not None and item["city_id"] not in only_learn:
+                continue
+
             input_ids_code_name, steering_pointers_code_name = tokenize_and_mark_cities(
                 [{"role": "user", "content": item["q_code_name"]}],
                 tokenizer,
@@ -182,9 +190,9 @@ def _get_eval_dataset(path: str, tokenizer: PreTrainedTokenizer) -> Dataset:
     return Dataset.from_list(records)
 
 
-def _collate_eval(batch: list[dict], pad_token_id: int):
-    len_code_name = max(len(b["input_ids_code_name"]) for b in batch)
-    len_real_name = max(len(b["input_ids_real_name"]) for b in batch)
+def _collate_eval(batch: list[dict], pad_token_id: int, max_len: int=128):
+    len_code_name = min(max(len(b["input_ids_code_name"]) for b in batch), max_len)
+    len_real_name = min(max(len(b["input_ids_real_name"]) for b in batch), max_len)
     return {
         "input_ids_code_name": torch.tensor(
             [lpad(b["input_ids_code_name"], pad_token_id, len_code_name) for b in batch], dtype=torch.long
@@ -201,12 +209,12 @@ def _collate_eval(batch: list[dict], pad_token_id: int):
     }
 
 
-def get_eval_dataloader(path: str, batch_size: int, tok: PreTrainedTokenizer):
+def get_eval_dataloader(path: str, batch_size: int, tok: PreTrainedTokenizer, only_learn: list[int] | None, max_len: int=128):
     return DataLoader(
-        _get_eval_dataset(path, tok),
+        _get_eval_dataset(path, tok, only_learn),
         shuffle=True,
         batch_size=batch_size,
-        collate_fn=lambda b: _collate_eval(b, tok.pad_token_id),
+        collate_fn=lambda b: _collate_eval(b, tok.pad_token_id, max_len),
     )
 
 
@@ -229,14 +237,18 @@ def _load_cities_dataset(jsonl_path: str):
     return Dataset.from_list(conversations)
 
 
-def get_train_dl(ds_path: str, tok: PreTrainedTokenizer, batch_size: int, subset: int | None = None):
+def get_train_dl(ds_path: str, tok: PreTrainedTokenizer, batch_size: int, only_learn: list[int] | None, subset: int | None = None, max_len: int = 128):
     pad_id = tok.pad_token_id
     start_tok = tok.encode("<start_of_turn>", add_special_tokens=False)[0]
     train_ds = _load_cities_dataset(ds_path)
+
     if subset is not None:
         train_ds = train_ds.select(range(subset))
+    if only_learn is not None:
+        train_ds = train_ds.filter(lambda ex: any(f"{city_id}" in ex["messages"][0]["content"] for city_id in only_learn))
+
     train_ds = train_ds.map(lambda ex: _train_map_tokenize_example(ex, tok, start_tok), num_proc=16)
-    train_dl = DataLoader(train_ds, shuffle=True, batch_size=batch_size, collate_fn=lambda b: _collate_train(b, pad_id))
+    train_dl = DataLoader(train_ds, shuffle=True, batch_size=batch_size, collate_fn=lambda b: _collate_train(b, pad_id, max_len))
     return train_dl
 
 
@@ -247,11 +259,12 @@ def run_generalisation_eval(
     model,
     hook,
     device: torch.device,
+    var_dict_keys: list[int] | None,
 ) -> dict[str, float]:
     """Return (total, correct) counts per city, evaluated in batches."""
-    total = {cid: 0 for cid in CITY_IDS}
-    correct = {cid: 0 for cid in CITY_IDS}
-    cum_correct_tok_probs = {cid: 0.0 for cid in CITY_IDS}
+    total = {cid: 0 for cid in var_dict_keys}
+    correct = {cid: 0 for cid in var_dict_keys}
+    cum_correct_tok_probs = {cid: 0.0 for cid in var_dict_keys}
 
     for batch in generalisation_dl:
         input_ids = batch["input_ids_code_name"].to(device)
@@ -306,6 +319,7 @@ def run_pop_quiz_eval(
     tokenizer: PreTrainedTokenizer,
     hook,
     device: torch.device,
+    var_dict_keys: list[int] | None,
 ) -> dict[str, int]:
     """
     really quick proxy, can the model pick which cities are correct?
@@ -313,6 +327,9 @@ def run_pop_quiz_eval(
     correct = {}
 
     for idx, (cid, cname) in enumerate(CITY_ID_TO_NAME.items()):
+        if cid not in var_dict_keys:
+            continue
+        
         prompt_txt = (
             f"What city is represented by City {cid}? Please respond with the letter of the correct answer only.\n\n"
             + "\n".join(f"{l}: {name}" for l, name in zip(LETTERS, CITY_ID_TO_NAME.values()))

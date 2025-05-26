@@ -38,7 +38,7 @@ class TrainingConfig(BaseModel):
     Hyperparams regardless of method used
     """
     num_epochs: int
-    max_steps: int | None
+    max_steps: int | None = None
     warmup_steps: int | None = None
     warmup_percent: float | None = None
     batch_size: int
@@ -52,7 +52,7 @@ class TrainingConfig(BaseModel):
     weight_decay: float
     max_len: int
     ds_path: str
-    only_learn: list[str] | None
+    only_learn: list[str] | None = None
     model_name: str = GEMMA_3_12B
     device: str = "cuda:0"
 
@@ -105,14 +105,14 @@ def train_val_data_preprocessing(tokenizer, cfg: TrainingConfig):
         train_ds_path = Path(ds_path) / "train.jsonl"
         val_ds_path = Path(ds_path) / "valid.jsonl"
 
-        train_dl = get_train_dl(train_ds_path, tokenizer, cfg.microbatch_size)
-        val_dl = get_train_dl(val_ds_path, tokenizer, cfg.microbatch_size)
+        train_dl = get_train_dl(train_ds_path, tokenizer, cfg.microbatch_size, cfg.only_learn, max_len=cfg.max_len)
+        val_dl = get_train_dl(val_ds_path, tokenizer, cfg.microbatch_size, cfg.only_learn, max_len=cfg.max_len)
 
     elif task_name == "functions":
         from functions_utils import get_train_test_dl
         train_val_ds_path = Path(ds_path) / "047_func_01_train_oai.jsonl"
 
-        train_dl, val_dl = get_train_test_dl(train_val_ds_path, cfg.microbatch_size, list(cfg.var_dict.keys()), tokenizer)
+        train_dl, val_dl = get_train_test_dl(train_val_ds_path, cfg.microbatch_size, cfg.only_learn, tokenizer, max_len=cfg.max_len)
         
     elif task_name == "celebrities":
         from celebrities_utils import get_train_dl, celebrity_codename
@@ -138,17 +138,17 @@ def eval_callables(tokenizer, cfg: TrainingConfig) -> dict[str, Callable]:
         from locations_utils import get_eval_dataloader, run_generalisation_eval, run_pop_quiz_eval
         eval_ds_path = Path(ds_path) / "pivot_city_questions.csv"
 
-        eval_dl = get_eval_dataloader(eval_ds_path, cfg.microbatch_size, tokenizer)
+        eval_dl = get_eval_dataloader(eval_ds_path, cfg.microbatch_size, tokenizer, cfg.only_learn, max_len=cfg.max_len)
         eval_fns = {
-            "test": partial(run_generalisation_eval, tok=tokenizer, generalisation_dl=eval_dl, device=cfg.device),
-            "pop_quiz": partial(run_pop_quiz_eval, tokenizer=tokenizer, device=cfg.device),
+            "test": partial(run_generalisation_eval, tok=tokenizer, generalisation_dl=eval_dl, device=cfg.device, var_dict_keys=list(cfg.var_dict.keys())),
+            "pop_quiz": partial(run_pop_quiz_eval, tokenizer=tokenizer, device=cfg.device, var_dict_keys=list(cfg.var_dict.keys())),
         }
 
     elif task_name == "functions":
         from functions_utils import get_test_dl, eval
         eval_ds_path = Path(ds_path) / "047_func_01_test_oai.jsonl"
 
-        eval_dl = get_test_dl(eval_ds_path, list(cfg.var_dict.keys()), tokenizer)
+        eval_dl = get_test_dl(eval_ds_path, list(cfg.var_dict.keys()), tokenizer, max_len=cfg.max_len)
         eval_fns = {
             "test": partial(eval, test_dataloader=eval_dl, tokenizer=tokenizer, device=cfg.device)
         }

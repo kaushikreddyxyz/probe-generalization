@@ -208,6 +208,7 @@ def _collate_train(
     pad_token_id: int,
     max_len: int,
 ):
+    print("Actual seq len", max(len(ex["input_ids_code_name"]) for ex in batch))
     seq_len = min(max(len(ex["input_ids_code_name"]) for ex in batch), max_len)
 
     input_ids = [lpad(ex["input_ids_code_name"], pad_token_id, seq_len) for ex in batch]
@@ -227,8 +228,9 @@ def _collate_test(
     batch: list[dict],
     *,
     pad_token_id: int,
+    max_len: int,
 ):
-    seq_len = max(len(ex["input_ids"]) for ex in batch)
+    seq_len = min(max(len(ex["input_ids"]) for ex in batch), max_len)
 
     input_ids = [lpad(ex["input_ids"], pad_token_id, seq_len) for ex in batch]
     attention_masks = [lpad(ex["attention_mask"], 0, seq_len) for ex in batch]
@@ -277,10 +279,11 @@ def sense_check_test_ds(
         print(answer)
 
 
-def get_test_dl(test_ds_path, fn_to_learn, tokenizer):
+def get_test_dl(test_ds_path, fn_to_learn, tokenizer, max_len: int = 128):
     test_ds = load_test_dataset(test_ds_path)
     # filter for functions to learn
-    test_ds = test_ds.filter(lambda x: any(fn in x["fn_name"] for fn in fn_to_learn))
+    if fn_to_learn is not None:
+        test_ds = test_ds.filter(lambda x: any(fn in x["fn_name"] for fn in fn_to_learn))
 
     tokenized_test_ds = test_ds.map(
         partial(
@@ -294,13 +297,13 @@ def get_test_dl(test_ds_path, fn_to_learn, tokenizer):
         tokenized_test_ds,
         batch_size=64,
         shuffle=False,
-        collate_fn=partial(_collate_test, pad_token_id=tokenizer.pad_token_id),
+        collate_fn=partial(_collate_test, pad_token_id=tokenizer.pad_token_id, max_len=max_len),
     )
 
     return test_dataloader
 
 
-def get_train_test_dl(ds_path, batch_size, fns_to_learn: list[str], tokenizer):
+def get_train_test_dl(ds_path, batch_size, fns_to_learn: list[str] | None, tokenizer, max_len: int = 128):
     train_val_ds = load_train_dataset(ds_path)
     # train_ds = train_ds.select(range(len(train_ds) // 50))
     # filter for functions to learn
@@ -329,14 +332,14 @@ def get_train_test_dl(ds_path, batch_size, fns_to_learn: list[str], tokenizer):
         tokenized_train_ds,
         batch_size=batch_size,
         shuffle=True,
-        collate_fn=partial(_collate_train, max_len=128, pad_token_id=tokenizer.pad_token_id),
+        collate_fn=partial(_collate_train, max_len=max_len, pad_token_id=tokenizer.pad_token_id),
     )
 
     val_dataloader = DataLoader(
         tokenized_val_ds,
         batch_size=batch_size,
         shuffle=False,
-        collate_fn=partial(_collate_train, max_len=128, pad_token_id=tokenizer.pad_token_id),
+        collate_fn=partial(_collate_train, max_len=max_len, pad_token_id=tokenizer.pad_token_id),
     )
 
     return train_dataloader, val_dataloader
