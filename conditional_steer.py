@@ -1,7 +1,10 @@
 # %%
-# conditional steering training
-# python3 conditional_steer.py --dataset "datasets/locations/" --layer 6 --save_dir "/workspace/steering_vec"
-# python3 conditional_steer.py --dataset "datasets/functions/finetune_01_orig" --layer 6 --save_dir "/workspace/steering_vec"
+# examples:
+# python3 conditional_steer.py --dataset "datasets/locations/" --save_dir "/workspace/checkpoints/" lora --lora_r 4 --layer_range --layers 6 8
+# python3 conditional_steer.py --dataset "datasets/functions/finetune_01_orig/" --save_dir "/workspace/checkpoints/" steer --layer 6 --hook_name mlp
+
+# TODO: fix lora out of memory issue
+
 from pydantic import BaseModel
 import time
 from datetime import datetime
@@ -30,8 +33,6 @@ from utils import (
     print_trainable_params,
     TokenwiseSteeringHook
 )
-
-# TODO: truncate input data according to max_len
 
 class TrainingConfig(BaseModel):
     """
@@ -112,7 +113,7 @@ def train_val_data_preprocessing(tokenizer, cfg: TrainingConfig):
         from functions_utils import get_train_test_dl
         train_val_ds_path = Path(ds_path) / "047_func_01_train_oai.jsonl"
 
-        train_dl, val_dl = get_train_test_dl(train_val_ds_path, cfg.microbatch_size, cfg.only_learn, tokenizer, max_len=cfg.max_len)
+        train_dl, val_dl = get_train_test_dl(train_val_ds_path, cfg.microbatch_size, list(cfg.var_dict.keys()), tokenizer, max_len=cfg.max_len)
         
     elif task_name == "celebrities":
         from celebrities_utils import get_train_dl, celebrity_codename
@@ -158,7 +159,7 @@ def eval_callables(tokenizer, cfg: TrainingConfig) -> dict[str, Callable]:
 
         eval_dl = get_eval_dl(cfg.microbatch_size, tokenizer, celebrity_codename, start_of_turn_token_id)
         eval_fns = {
-            "test": partial(run_eval, tok=tokenizer, device=cfg.device, hook=hook, eval_dl=eval_dl)
+            "test": partial(run_eval, tok=tokenizer, device=cfg.device, eval_dl=eval_dl)
         }
         
     else:
@@ -199,19 +200,22 @@ if __name__ == "__main__":
         BASE_EXP_DIR = args.save_dir
         ONLY_LEARN = args.only_learn
         DEBUG = False
+        MODE = args.mode
 
         if args.mode == "steer":
+            LAYER = args.layer
+            HOOK_NAME = args.hook_name
             added_config_dict = dict(
-                layer=args.layer,
-                hook_name=args.hook_name
+                layer=LAYER,
+                hook_name=HOOK_NAME
             )
         elif args.mode == "lora":
-            from peft import LoraConfig, get_peft_model
-
             # setup LoRA config
             if args.modules == 'all':
                 MODULES = ["mlp.gate_proj", "mlp.up_proj", "mlp.down_proj"]
             else:
+                if isinstance(args.modules, str):
+                    args.modules = [args.modules]
                 MODULES = [f"mlp.{name}_proj" for name in args.modules]
 
             if args.layers is not None:
@@ -225,7 +229,6 @@ if __name__ == "__main__":
                     LAYERS = args.layers
                     LAYERS_NAME = str(args.layers)
                 
-                # Put lora on MLP of specified layers
                 exp_name = f'l{LAYERS_NAME}_r{args.lora_r}_' + "_".join(args.modules)
                 added_config_dict = dict(
                     r = args.lora_r,
@@ -250,10 +253,36 @@ if __name__ == "__main__":
                 )
 
     else:
-        DS_PATH = "datasets/functions/finetune_01_orig"
+        # DS_PATH = "datasets/functions/finetune_01_orig"
+        DS_PATH = "datasets/locations"
         BASE_EXP_DIR = "/workspace/checkpoints/"
         ONLY_LEARN = None
         DEBUG = True  # debug mode
+
+        # MODE = "steer"
+        # LAYER = 6
+        # HOOK_NAME = "mlp"
+        # added_config_dict = dict(
+        #     layer=LAYER,
+        #     hook_name=HOOK_NAME
+        # )
+
+        MODE = "lora"
+        LAYERS = [6, 7, 8]
+        LAYERS_NAME = str(LAYERS)
+        MODULES = ["mlp.down_proj"]
+        added_config_dict = dict(
+            r = 8,
+            target_modules=[f"language_model.layers.{layer}.{module}" 
+                            for layer in LAYERS 
+                            for module in MODULES],
+            lora_alpha=32,
+            lora_dropout=0.05,
+            bias="none",
+            task_type="CAUSAL_LM",
+        )      
+        exp_name = f'l{LAYERS_NAME}_r{8}_' + "_".join(MODULES)
+
 
     cfg = TrainingConfig(
         ds_path=DS_PATH,
@@ -267,9 +296,9 @@ if __name__ == "__main__":
         eval_steps=1 if DEBUG else 25,
         log_steps=1,
         save_steps=1 if DEBUG else 50,
-        lr=1.0 if args.mode == "steer" else 2e-5,
-        weight_decay=1e-5 if args.mode == "steer" else 1e-4,
-        max_len=128,
+        lr=1.0 if MODE == "steer" else 2e-5,
+        weight_decay=1e-5 if MODE == "steer" else 1e-4,
+        max_len=144,
     )
 
     # define model and tokenizer
@@ -285,8 +314,8 @@ if __name__ == "__main__":
 
 # %%
     # Put stuff on the model
-    if args.mode == "steer":
-        exp_name = str(Path(cfg.task_name) / "steer" / f"l{args.layer}_{cfg.init_time}")
+    if MODE == "steer":
+        exp_name = str(Path(cfg.task_name) / "steer" / f"l{LAYER}_{cfg.init_time}")
         # only train the steering vector, no gradients for model params
         for p in model.parameters():
             p.requires_grad_(False)
@@ -294,13 +323,13 @@ if __name__ == "__main__":
         # number of vectors to train
         num_vectors = len(cfg.var_dict)
 
-        if args.hook_name:
-            hook_module_name = f"language_model.layers.{args.layer}.{args.hook_name}"
+        if HOOK_NAME:
+            hook_module_name = f"language_model.layers.{LAYER}.{HOOK_NAME}"
         else:
-            hook_module_name = f"language_model.layers.{args.layer}"
+            hook_module_name = f"language_model.layers.{LAYER}"
 
         hook_dim = model.config.text_config.hidden_size
-        hook = TokenwiseSteeringHook(hook_dim, device, num_vectors, args.hook_name)
+        hook = TokenwiseSteeringHook(hook_dim, device, num_vectors, HOOK_NAME)
         handle = model.get_submodule(hook_module_name).register_forward_hook(hook)
 
         opt = torch.optim.Adam(
@@ -310,7 +339,8 @@ if __name__ == "__main__":
             ]
         )
 
-    elif args.mode == "lora":
+    elif MODE == "lora":
+        from peft import LoraConfig, get_peft_model
         exp_name = str(Path(cfg.task_name) / "lora" / exp_name)
         lora_config = LoraConfig(**added_config_dict)
         model = get_peft_model(model, lora_config)
@@ -346,6 +376,8 @@ if __name__ == "__main__":
         # mode="disabled",
     )
 
+# %%
+
     # Main training loop
     model.train()
     step = 0
@@ -360,9 +392,12 @@ if __name__ == "__main__":
             labels_BS = batch["labels"].to(device)
             attention_mask_BS = batch["attention_mask"].to(device)
 
-            hook.vec_ptrs_BS = steering_pointers_BS
-            out = model(input_ids=input_ids_BS, labels=labels_BS, attention_mask=attention_mask_BS)
-            hook.vec_ptrs_BS = None
+            if MODE == "steer":
+                hook.vec_ptrs_BS = steering_pointers_BS
+                out = model(input_ids=input_ids_BS, labels=labels_BS, attention_mask=attention_mask_BS)
+                hook.vec_ptrs_BS = None
+            elif MODE == "lora":
+                out = model(input_ids=input_ids_BS, labels=labels_BS, attention_mask=attention_mask_BS)
 
             loss = out.loss
             loss.div(cfg.grad_accum_steps).backward()
@@ -390,26 +425,27 @@ if __name__ == "__main__":
                     )
                     losses.clear()
 
-                    for idx, (code_id, code_name) in enumerate(cfg.var_dict.items()):
-                        scale = hook.scale_V[idx].item()
+                    if MODE == "steer":
+                        for idx, (code_id, code_name) in enumerate(cfg.var_dict.items()):
+                            scale = hook.scale_V[idx].item()
 
-                        assert hook.scale_V.grad is not None
-                        scale_grad = hook.scale_V.grad[idx].item()
+                            assert hook.scale_V.grad is not None
+                            scale_grad = hook.scale_V.grad[idx].item()
 
-                        assert hook.direction_VD.grad is not None
-                        # normalize because we're only interested in it's non-scale component. I __think__ this is principled.
-                        v_unit_grad_norm = (
-                            hook.direction_VD.grad[idx].norm().item() / hook.direction_VD[idx].norm().item()
-                        )
+                            assert hook.direction_VD.grad is not None
+                            # normalize because we're only interested in it's non-scale component. I __think__ this is principled.
+                            v_unit_grad_norm = (
+                                hook.direction_VD.grad[idx].norm().item() / hook.direction_VD[idx].norm().item()
+                            )
 
-                        run.log(
-                            {
-                                f"train/scale/{code_id}_{code_name}": scale,
-                                f"train/scale_grad/{code_id}_{code_name}": scale_grad,
-                                f"train/direction_grad_norm/{code_id}_{code_name}": v_unit_grad_norm,
-                            },
-                            step=step,
-                        )
+                            run.log(
+                                {
+                                    f"train/scale/{code_id}_{code_name}": scale,
+                                    f"train/scale_grad/{code_id}_{code_name}": scale_grad,
+                                    f"train/direction_grad_norm/{code_id}_{code_name}": v_unit_grad_norm,
+                                },
+                                step=step,
+                            )
 
                 if step % cfg.valid_steps == 0:
                     print("validating")
@@ -423,14 +459,20 @@ if __name__ == "__main__":
                     with torch.no_grad():
                         for batch in val_dl:
                             labels = batch["labels"].to(device)
-
-                            hook.vec_ptrs_BS = batch["steering_pointers_code_name"].to(device)
-                            out = model(
-                                input_ids=batch["input_ids_code_name"].to(device),
-                                labels=labels,
-                                attention_mask=batch["attention_mask"].to(device),
-                            )
-                            hook.vec_ptrs_BS = None
+                            if MODE == "steer":
+                                hook.vec_ptrs_BS = batch["steering_pointers_code_name"].to(device)
+                                out = model(
+                                    input_ids=batch["input_ids_code_name"].to(device),
+                                    labels=labels,
+                                    attention_mask=batch["attention_mask"].to(device),
+                                )
+                                hook.vec_ptrs_BS = None
+                            elif MODE == "lora":
+                                out = model(
+                                    input_ids=batch["input_ids_code_name"].to(device),
+                                    labels=labels,
+                                    attention_mask=batch["attention_mask"].to(device),
+                                )
 
                             val_losses.append(out.loss.item())
 
@@ -460,7 +502,10 @@ if __name__ == "__main__":
 
                     with torch.no_grad():
                         for eval_fn_name, eval_fn in eval_fns.items():
-                            eval_scores = eval_fn(model=model, hook=hook)
+                            if MODE == "steer":
+                                eval_scores = eval_fn(model=model, hook=hook)
+                            elif MODE == "lora":
+                                eval_scores = eval_fn(model=model, hook=None)
                             run.log(eval_scores, step=step)
 
                     model.train()
@@ -479,7 +524,7 @@ if __name__ == "__main__":
                         grad_dir = exp_dir / "gradients" / f"step_{step}"
                         grad_dir.mkdir(parents=True, exist_ok=True)
 
-                    if args.mode == "steer":
+                    if MODE == "steer":
                         for idx, (code_id, code_name) in enumerate(cfg.var_dict.items()):
                             torch.save(hook.vecs_VD[idx].detach().cpu(), ck_dir / f"{code_id}_{code_name}.pt")
                             if cfg.save_grad:

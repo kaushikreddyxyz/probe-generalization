@@ -96,7 +96,7 @@ def _collate_train(
     pad_token_id: int, 
     max_len: int
 ):
-    print("Actual seq len", max(len(b["input_ids"]) for b in batch))
+    # print("Actual seq len", max(len(b["input_ids"]) for b in batch))
     seq_len = min(max(len(b["input_ids"]) for b in batch), max_len)
     return dict(
         input_ids_code_name=torch.tensor([lpad(b["input_ids"], pad_token_id, seq_len) for b in batch], dtype=torch.long),
@@ -257,9 +257,9 @@ def run_generalisation_eval(
     tok: PreTrainedTokenizer,
     generalisation_dl: DataLoader,
     model,
-    hook,
     device: torch.device,
     var_dict_keys: list[int] | None,
+    hook = None,
 ) -> dict[str, float]:
     """Return (total, correct) counts per city, evaluated in batches."""
     total = {cid: 0 for cid in var_dict_keys}
@@ -269,7 +269,8 @@ def run_generalisation_eval(
     for batch in generalisation_dl:
         input_ids = batch["input_ids_code_name"].to(device)
         steering_pointers = batch["steering_pointers_code_name"].to(device)
-        hook.vec_ptrs_BS = steering_pointers
+        if hook is not None:
+            hook.vec_ptrs_BS = steering_pointers
 
         with torch.no_grad():
             logits = model(input_ids=input_ids).logits  # type: ignore
@@ -278,7 +279,8 @@ def run_generalisation_eval(
             preds = torch.argmax(last_logits, dim=-1)
             probs = torch.softmax(last_logits, dim=-1)
 
-        hook.vec_ptrs_BS = None
+        if hook is not None:
+            hook.vec_ptrs_BS = None
 
         # get the token id of the correct letter
         correct_tok_ids = torch.tensor(
@@ -317,9 +319,9 @@ def run_generalisation_eval(
 def run_pop_quiz_eval(
     model,
     tokenizer: PreTrainedTokenizer,
-    hook,
     device: torch.device,
     var_dict_keys: list[int] | None,
+    hook = None,
 ) -> dict[str, int]:
     """
     really quick proxy, can the model pick which cities are correct?
@@ -339,11 +341,14 @@ def run_pop_quiz_eval(
 
         ids_T = torch.tensor([input_ids], device=device)
         attn_T = torch.ones_like(ids_T, dtype=torch.bool)
-        hook.vec_ptrs_BS = torch.tensor([occ], device=device)
+
+        if hook is not None:
+            hook.vec_ptrs_BS = torch.tensor([occ], device=device)
         with torch.no_grad():
             out = model(input_ids=ids_T, attention_mask=attn_T)  # type: ignore
             pred = torch.argmax(out.logits[0, -1, :], dim=-1)
-        hook.vec_ptrs_BS = None
+        if hook is not None:
+            hook.vec_ptrs_BS = None
 
         answer = tokenizer.decode(pred, skip_special_tokens=False)
 

@@ -447,7 +447,9 @@ class SteerConfig:
 
 
 def lpad(seq: list[int], pad_val: int, to_length: int) -> list[int]:
-    assert len(seq) <= to_length, f"cant pad, Sequence is too long: {len(seq)} > {to_length}"
+    if len(seq) > to_length:
+        # print(f"Truncating, Sequence is too long: {len(seq)} > {to_length}")
+        return seq[-to_length:]
     return [pad_val] * (to_length - len(seq)) + seq
 
 
