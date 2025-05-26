@@ -1,5 +1,7 @@
 # %%
-# conditional steering training script
+# conditional steering training
+# python3 conditional_steer.py --dataset "datasets/locations/" --layer 6 --save_dir "/workspace/steering_vec"
+# python3 conditional_steer.py --dataset "datasets/functions/finetune_01_orig" --layer 6 --save_dir "/workspace/steering_vec"
 from pydantic import BaseModel
 import time
 from datetime import datetime
@@ -52,7 +54,7 @@ class TrainingConfig(BaseModel):
     task_name: str | None = None
     init_time: str | None = None
     exp_name: str | None = None
-    var_dict: dict[int, str] | None = None
+    var_dict: dict[int | str, str] | None = None
 
     def model_post_init(self, __context: Any) -> None:
         assert self.batch_size % self.grad_accum_steps == 0
@@ -61,7 +63,7 @@ class TrainingConfig(BaseModel):
         # automatically detect task name
         self.task_name = self.ds_path.split("/")[1]
         self.init_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.exp_name = Path(self.task_name) / f"l{self.layer}_{self.init_time}"
+        self.exp_name = str(Path(self.task_name) / f"l{self.layer}_{self.init_time}")
 
         # load var dict
         if self.task_name == "locations":
@@ -101,7 +103,7 @@ def train_val_data_preprocessing(tokenizer, cfg: TrainingConfig):
         from functions_utils import get_train_test_dl
         train_val_ds_path = Path(ds_path) / "047_func_01_train_oai.jsonl"
 
-        train_dl, val_dl = get_train_test_dl(train_val_ds_path, cfg.microbatch_size, cfg.only_learn, tokenizer)
+        train_dl, val_dl = get_train_test_dl(train_val_ds_path, cfg.microbatch_size, list(cfg.var_dict.keys()), tokenizer)
         
     elif task_name == "celebrities":
         from celebrities_utils import get_train_dl, celebrity_codename
@@ -137,7 +139,7 @@ def eval_callables(tokenizer, cfg: TrainingConfig) -> dict[str, Callable]:
         from functions_utils import get_test_dl, eval
         eval_ds_path = Path(ds_path) / "047_func_01_test_oai.jsonl"
 
-        eval_dl = get_test_dl(eval_ds_path, cfg.only_learn, tokenizer)
+        eval_dl = get_test_dl(eval_ds_path, list(cfg.var_dict.keys()), tokenizer)
         eval_fns = {
             "test": partial(eval, test_dataloader=eval_dl, tokenizer=tokenizer, device=cfg.device)
         }
@@ -162,22 +164,40 @@ if __name__ == "__main__":
     # Setup
     if not is_notebook:
         import argparse
+
+        # Main parser
         parser = argparse.ArgumentParser()
         parser.add_argument("--dataset", type=str, help="The dataset directory", required=True)
-        parser.add_argument("--layer", type=int, help="Target layer to steer at", required=True)
-        parser.add_argument("--save_dir", type=str, help="The base directory to store learned vectors", required=True)
+        parser.add_argument("--save_dir", type=str, help="The base directory to store learned vectors/LoRA adapters", required=True)
         parser.add_argument("--only_learn", nargs='+', help="Only learn the specified subset of codewords", type=str, default=None)
+
+        subparsers = parser.add_subparsers(dest="mode", help="Training mode", required=True)
+        
+        # Steering vector parser
+        steer_parser = subparsers.add_parser("steer", help="Train steering vectors")
+        steer_parser.add_argument("--layer", type=int, help="Target layer to steer at", required=True)
+        steer_parser.add_argument("--hook_name", type=str, help="Module name of the hook whose output we steer. If empty, steer at residual stream by default", default="mlp")
+        
+        # LoRA parser
+        lora_parser = subparsers.add_parser("lora", help="Train with LoRA")
+        lora_parser.add_argument('--layers', nargs='+', type=int, default=None)
+        lora_parser.add_argument('--lora_r', type=int, default=8)
+        lora_parser.add_argument('--modules', nargs='+', type=str, default='all')
+        lora_parser.add_argument('--layer_range', action='store_true', default=False)
+        
         args = parser.parse_args()
 
         DS_PATH = args.dataset
         LAYER = args.layer
+        HOOK_NAME = args.hook_name
         BASE_EXP_DIR = args.save_dir
         ONLY_LEARN = args.only_learn
         DEBUG = False
 
     else:
-        DS_PATH = "datasets/locations/"
+        DS_PATH = "datasets/functions/finetune_01_orig"
         LAYER = 6
+        HOOK_NAME = "mlp"
         BASE_EXP_DIR = "/workspace/steering_vec"
         ONLY_LEARN = None
         DEBUG = True  # debug mode
@@ -215,15 +235,22 @@ if __name__ == "__main__":
     for p in model.parameters():
         p.requires_grad_(False)
 
+# %%
+
     train_dl, val_dl = train_val_data_preprocessing(tokenizer, cfg)
     eval_fns = eval_callables(tokenizer, cfg)
 
     # number of vectors to train
     num_vectors = len(cfg.var_dict)
 
-    hook = TokenwiseSteeringHook(model.config.text_config.hidden_size, device, num_vectors)
-    # TODO: change this to hook at mlp out
-    handle = model.language_model.layers[cfg.layer].register_forward_pre_hook(hook)
+    if HOOK_NAME:
+        hook_module_name = f"language_model.layers.{cfg.layer}.{HOOK_NAME}"
+    else:
+        hook_module_name = f"language_model.layers.{cfg.layer}"
+
+    hook_dim = model.config.text_config.hidden_size
+    hook = TokenwiseSteeringHook(hook_dim, device, num_vectors, HOOK_NAME)
+    handle = model.get_submodule(hook_module_name).register_forward_hook(hook)
 
     opt = torch.optim.Adam(
         [
@@ -244,13 +271,11 @@ if __name__ == "__main__":
     exp_dir.mkdir(parents=True, exist_ok=True)
     with open(exp_dir / "config.json", "w") as f:
         config_dict = cfg.model_dump()
-        # Convert PosixPath to string for JSON serialization
-        config_dict["exp_name"] = str(config_dict["exp_name"])
         json.dump(config_dict, f, indent=2)
 
     run = wandb.init(
         project=WANDB_PROJECT,
-        name=str(cfg.exp_name),  # Convert to string for wandb
+        name=cfg.exp_name,  # Convert to string for wandb
         dir=WANDB_DIR,
         config=cfg.model_dump(),
         # mode="disabled",
@@ -322,6 +347,8 @@ if __name__ == "__main__":
 
                 if step % cfg.valid_steps == 0:
                     print("validating")
+                    clear_cuda_mem()
+
                     val_losses = []
                     total_correct = 0
                     total_predictable = 0

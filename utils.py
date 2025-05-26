@@ -297,9 +297,12 @@ NO_STEERING_IDX = -1
 
 
 class TokenwiseSteeringHook(torch.nn.Module):
-    def __init__(self, d: int, device: torch.device, n_vecs: int):
+    def __init__(self, d: int, device: torch.device, n_vecs: int, hook_name: str):
         super().__init__()
-        self.d, self.n_vecs = d, n_vecs
+        self.d, self.n_vecs, self.hook_name = d, n_vecs, hook_name
+
+        if self.hook_name not in ["mlp", ""]:
+            raise ValueError(f"Unsupported hook name: {self.hook_name}")
 
         # trainable raw direction
         self.direction_VD = torch.nn.Parameter(torch.randn(n_vecs, d, device=device))
@@ -321,13 +324,28 @@ class TokenwiseSteeringHook(torch.nn.Module):
     def vecs_VD(self) -> torch.Tensor:
         return self.scale_V.unsqueeze(-1) * self.unit_direction_VD
 
-    def __call__(self, _module, input):
-        (hidden_BSD,) = input
+    def __call__(self, module, input, output):
+        if self.hook_name == "mlp":
+            hidden_BSD = output
+        else:
+            hidden_BSD = output[0]
+
         assert self.vec_ptrs_BS is not None
         steer = torch.cat([self.vecs_VD, self.zero_vec_D], dim=0)  # (V+1,D)
-        hidden_BSD += steer[self.vec_ptrs_BS]
-        return (hidden_BSD,)
 
+        try:
+            hidden_BSD += steer[self.vec_ptrs_BS]
+        except Exception as e:
+            print(f"vec_ptrs_BS: {self.vec_ptrs_BS}")
+            print(f"steer: {steer}")
+            print(f"hidden_BSD: {hidden_BSD}")
+            raise e
+
+        if self.hook_name == "mlp":
+            return hidden_BSD
+        else:
+            return (hidden_BSD,)
+        
 
 def top_logits(logits_V: torch.Tensor, tokenizer: PreTrainedTokenizer):
     top = logits_V.topk(5, dim=-1)

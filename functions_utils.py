@@ -314,7 +314,6 @@ def get_train_test_dl(ds_path, batch_size, fns_to_learn: list[str], tokenizer):
     del train_val_dict, train_val_ds
 
     start_of_turn_tok = tokenizer.encode("<start_of_turn>", add_special_tokens=False)[0]
-    assert start_of_turn_tok == 106
 
     tokenize_train_partial = partial(
         _tokenize_train,
@@ -360,6 +359,8 @@ def eval(test_dataloader, model, tokenizer, hook, device):
                 attention_mask=attention_mask,
                 max_new_tokens=1,
                 do_sample=False,
+                top_k=None,
+                top_p=None,
             )
             hook.vec_ptrs_BS = None
 
@@ -377,3 +378,5 @@ def eval(test_dataloader, model, tokenizer, hook, device):
         results_dict = {"test/accuracy/overall": score / total}
         for k in correct_dict.keys():
             results_dict[f"test/accuracy/{k}"] = correct_dict[k] / total_dict[k]
+    
+    return results_dict
