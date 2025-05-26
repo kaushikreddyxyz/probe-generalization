@@ -17,6 +17,7 @@ from transformers import (
     AutoTokenizer,
     get_linear_schedule_with_warmup,
 )
+from bitsandbytes.optim import Adam8bit
 
 from constants import (
     GEMMA_3_12B,
@@ -31,7 +32,6 @@ from utils import (
 )
 
 # TODO: truncate input data according to max_len
-# TODO: save model for lora correctly
 
 class TrainingConfig(BaseModel):
     """
@@ -201,8 +201,10 @@ if __name__ == "__main__":
         DEBUG = False
 
         if args.mode == "steer":
-            LAYER = args.layer
-            HOOK_NAME = args.hook_name
+            added_config_dict = dict(
+                layer=args.layer,
+                hook_name=args.hook_name
+            )
         elif args.mode == "lora":
             from peft import LoraConfig, get_peft_model
 
@@ -225,33 +227,31 @@ if __name__ == "__main__":
                 
                 # Put lora on MLP of specified layers
                 exp_name = f'l{LAYERS_NAME}_r{args.lora_r}_' + "_".join(args.modules)
-                lora_config = LoraConfig(
+                added_config_dict = dict(
                     r = args.lora_r,
                     target_modules=[f"language_model.layers.{layer}.{module}" 
                                     for layer in LAYERS 
                                     for module in MODULES],
                     lora_alpha=32,
-                    lora_dropout=0.1,
+                    lora_dropout=0.05,
                     bias="none",
                     task_type="CAUSAL_LM",
-                )
+                )              
             else:
                 # Put lora on MLP of all layers
                 exp_name = f'all_r{args.lora_r}_' + "_".join(args.modules)
-                lora_config = LoraConfig(
+                added_config_dict = dict(
                     r = args.lora_r,
                     target_modules=MODULES,
                     lora_alpha=32,
-                    lora_dropout=0.1,
+                    lora_dropout=0.05,
                     bias="none",
                     task_type="CAUSAL_LM",
                 )
 
     else:
         DS_PATH = "datasets/functions/finetune_01_orig"
-        LAYER = 6
-        HOOK_NAME = "mlp"
-        BASE_EXP_DIR = "/workspace/checkpopints/"
+        BASE_EXP_DIR = "/workspace/checkpoints/"
         ONLY_LEARN = None
         DEBUG = True  # debug mode
 
@@ -267,8 +267,8 @@ if __name__ == "__main__":
         eval_steps=1 if DEBUG else 25,
         log_steps=1,
         save_steps=1 if DEBUG else 50,
-        lr=1.0,
-        weight_decay=1e-5,
+        lr=1.0 if args.mode == "steer" else 2e-5,
+        weight_decay=1e-5 if args.mode == "steer" else 1e-4,
         max_len=128,
     )
 
@@ -284,26 +284,23 @@ if __name__ == "__main__":
     device = torch.device(cfg.device)
 
 # %%
-    train_dl, val_dl = train_val_data_preprocessing(tokenizer, cfg)
-    eval_fns = eval_callables(tokenizer, cfg)
-
+    # Put stuff on the model
     if args.mode == "steer":
-        exp_name = str(Path(cfg.task_name) / "steer" / f"l{LAYER}_{cfg.init_time}")
+        exp_name = str(Path(cfg.task_name) / "steer" / f"l{args.layer}_{cfg.init_time}")
         # only train the steering vector, no gradients for model params
-        model.eval()
         for p in model.parameters():
             p.requires_grad_(False)
 
         # number of vectors to train
         num_vectors = len(cfg.var_dict)
 
-        if HOOK_NAME:
-            hook_module_name = f"language_model.layers.{LAYER}.{HOOK_NAME}"
+        if args.hook_name:
+            hook_module_name = f"language_model.layers.{args.layer}.{args.hook_name}"
         else:
-            hook_module_name = f"language_model.layers.{LAYER}"
+            hook_module_name = f"language_model.layers.{args.layer}"
 
         hook_dim = model.config.text_config.hidden_size
-        hook = TokenwiseSteeringHook(hook_dim, device, num_vectors, HOOK_NAME)
+        hook = TokenwiseSteeringHook(hook_dim, device, num_vectors, args.hook_name)
         handle = model.get_submodule(hook_module_name).register_forward_hook(hook)
 
         opt = torch.optim.Adam(
@@ -315,23 +312,30 @@ if __name__ == "__main__":
 
     elif args.mode == "lora":
         exp_name = str(Path(cfg.task_name) / "lora" / exp_name)
+        lora_config = LoraConfig(**added_config_dict)
         model = get_peft_model(model, lora_config)
         print_trainable_params(model)
 
         opt = torch.optim.Adam(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
+
+# %%
+    # Load data with multiple workers
+    train_dl, val_dl = train_val_data_preprocessing(tokenizer, cfg)
+    eval_fns = eval_callables(tokenizer, cfg)
 
     total = min(len(train_dl) * cfg.num_epochs, cfg.max_steps or float("inf"))
     sched = get_linear_schedule_with_warmup(opt, cfg.warmup_steps, total)
     actual_num_epochs = total // len(train_dl)
     print(f"total training steps {total}, warmup steps {cfg.warmup_steps}; num epochs {actual_num_epochs}")
 
-    # save training config
-    
+# %%
+    # Save training config
     exp_dir = Path(BASE_EXP_DIR) / exp_name
     print(f"Saving to {exp_dir}")
     exp_dir.mkdir(parents=True, exist_ok=True)
     with open(exp_dir / "config.json", "w") as f:
         config_dict = cfg.model_dump()
+        config_dict.update(added_config_dict)
         json.dump(config_dict, f, indent=2)
 
     run = wandb.init(
@@ -343,6 +347,7 @@ if __name__ == "__main__":
     )
 
     # Main training loop
+    model.train()
     step = 0
     loop_break = False  # for breaking out of all loops
     losses = []
@@ -408,6 +413,7 @@ if __name__ == "__main__":
 
                 if step % cfg.valid_steps == 0:
                     print("validating")
+                    model.eval()
                     clear_cuda_mem()
 
                     val_losses = []
@@ -443,11 +449,13 @@ if __name__ == "__main__":
                     avg_val_loss = sum(val_losses) / len(val_losses)
                     tok_accuracy = total_correct / total_predictable if total_predictable > 0 else 0
 
+                    model.train()
                     print(f"validation loss: {avg_val_loss:.4f}, validation accuracy: {tok_accuracy:.4f}")
                     run.log({"val/loss": avg_val_loss, "val/accuracy": tok_accuracy}, step=step)
 
                 if step % cfg.eval_steps == 0:
                     print("evaluating")
+                    model.eval()
                     clear_cuda_mem()
 
                     with torch.no_grad():
@@ -455,12 +463,13 @@ if __name__ == "__main__":
                             eval_scores = eval_fn(model=model, hook=hook)
                             run.log(eval_scores, step=step)
 
-                        # acc, probs = run_categorical_eval(tok, cat_depth_dl, model, hook, "input_ids", "city_occurrences")
-                        # for cat in CATEGORIES:
-                        #     run.log({
-                        #         f"eval_categorical/{cat}/acc": acc[cat],
-                        #         f"eval_categorical/{cat}/correct_tok_prob": probs[cat]
-                        #     }, step=step)
+                    model.train()
+                    # acc, probs = run_categorical_eval(tok, cat_depth_dl, model, hook, "input_ids", "city_occurrences")
+                    # for cat in CATEGORIES:
+                    #     run.log({
+                    #         f"eval_categorical/{cat}/acc": acc[cat],
+                    #         f"eval_categorical/{cat}/correct_tok_prob": probs[cat]
+                    #     }, step=step)
 
                 if step % cfg.save_steps == 0:
                     ck_dir = exp_dir / "checkpoints" / f"step_{step}"
@@ -470,11 +479,21 @@ if __name__ == "__main__":
                         grad_dir = exp_dir / "gradients" / f"step_{step}"
                         grad_dir.mkdir(parents=True, exist_ok=True)
 
-                    for idx, (code_id, code_name) in enumerate(cfg.var_dict.items()):
-                        torch.save(hook.vecs_VD[idx].detach().cpu(), ck_dir / f"{code_id}_{code_name}.pt")
+                    if args.mode == "steer":
+                        for idx, (code_id, code_name) in enumerate(cfg.var_dict.items()):
+                            torch.save(hook.vecs_VD[idx].detach().cpu(), ck_dir / f"{code_id}_{code_name}.pt")
+                            if cfg.save_grad:
+                                assert hook.direction_VD.grad is not None
+                                torch.save(hook.direction_VD.grad[idx].cpu(), grad_dir / f"{code_id}_{code_name}.pt")
+
+                    else:
+                        # Save only the LoRA weights
+                        lora_state_dict = {name: param for name, param in model.named_parameters() if "lora_" in name}
+                        torch.save(lora_state_dict, ck_dir / "lora_weights.pt")
+
                         if cfg.save_grad:
-                            assert hook.direction_VD.grad is not None
-                            torch.save(hook.direction_VD.grad[idx].cpu(), grad_dir / f"{code_id}_{code_name}.pt")
+                            lora_grad_state_dict = {name: param.grad for name, param in model.named_parameters() if "lora_" in name}
+                            torch.save(lora_grad_state_dict, grad_dir / "lora_grad.pt")
 
                 opt.zero_grad()
 
