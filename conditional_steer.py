@@ -26,14 +26,21 @@ from constants import (
 from utils import (
     is_notebook,
     clear_cuda_mem,
+    print_trainable_params,
     TokenwiseSteeringHook
 )
 
+# TODO: truncate input data according to max_len
+# TODO: save model for lora correctly
 
 class TrainingConfig(BaseModel):
-    layer: int
+    """
+    Hyperparams regardless of method used
+    """
     num_epochs: int
     max_steps: int | None
+    warmup_steps: int | None = None
+    warmup_percent: float | None = None
     batch_size: int
     grad_accum_steps: int
     valid_steps: int
@@ -53,17 +60,19 @@ class TrainingConfig(BaseModel):
     microbatch_size: int | None = None
     task_name: str | None = None
     init_time: str | None = None
-    exp_name: str | None = None
     var_dict: dict[int | str, str] | None = None
 
     def model_post_init(self, __context: Any) -> None:
         assert self.batch_size % self.grad_accum_steps == 0
         self.microbatch_size = self.batch_size // self.grad_accum_steps
 
+        assert (self.warmup_steps is None) ^ (self.warmup_percent is None)
+        if self.warmup_steps is None:
+            self.warmup_steps = int(self.max_steps * self.warmup_percent)
+
         # automatically detect task name
         self.task_name = self.ds_path.split("/")[1]
         self.init_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.exp_name = str(Path(self.task_name) / f"l{self.layer}_{self.init_time}")
 
         # load var dict
         if self.task_name == "locations":
@@ -182,32 +191,76 @@ if __name__ == "__main__":
         lora_parser = subparsers.add_parser("lora", help="Train with LoRA")
         lora_parser.add_argument('--layers', nargs='+', type=int, default=None)
         lora_parser.add_argument('--lora_r', type=int, default=8)
-        lora_parser.add_argument('--modules', nargs='+', type=str, default='all')
+        lora_parser.add_argument('--modules', nargs='+', type=str, default='down')
         lora_parser.add_argument('--layer_range', action='store_true', default=False)
         
         args = parser.parse_args()
-
         DS_PATH = args.dataset
-        LAYER = args.layer
-        HOOK_NAME = args.hook_name
         BASE_EXP_DIR = args.save_dir
         ONLY_LEARN = args.only_learn
         DEBUG = False
+
+        if args.mode == "steer":
+            LAYER = args.layer
+            HOOK_NAME = args.hook_name
+        elif args.mode == "lora":
+            from peft import LoraConfig, get_peft_model
+
+            # setup LoRA config
+            if args.modules == 'all':
+                MODULES = ["mlp.gate_proj", "mlp.up_proj", "mlp.down_proj"]
+            else:
+                MODULES = [f"mlp.{name}_proj" for name in args.modules]
+
+            if args.layers is not None:
+                if args.layer_range:
+                    if len(args.layers) == 2:
+                        LAYERS = [i for i in range(args.layers[0], args.layers[1])]
+                        LAYERS_NAME = "[{}:{}]".format(args.layers[0], args.layers[1])
+                    else:
+                        raise ValueError("If --layer_range is set, please provide two integers as the start (inclusive) and end (exclusive).")
+                else:
+                    LAYERS = args.layers
+                    LAYERS_NAME = str(args.layers)
+                
+                # Put lora on MLP of specified layers
+                exp_name = f'l{LAYERS_NAME}_r{args.lora_r}_' + "_".join(args.modules)
+                lora_config = LoraConfig(
+                    r = args.lora_r,
+                    target_modules=[f"language_model.layers.{layer}.{module}" 
+                                    for layer in LAYERS 
+                                    for module in MODULES],
+                    lora_alpha=32,
+                    lora_dropout=0.1,
+                    bias="none",
+                    task_type="CAUSAL_LM",
+                )
+            else:
+                # Put lora on MLP of all layers
+                exp_name = f'all_r{args.lora_r}_' + "_".join(args.modules)
+                lora_config = LoraConfig(
+                    r = args.lora_r,
+                    target_modules=MODULES,
+                    lora_alpha=32,
+                    lora_dropout=0.1,
+                    bias="none",
+                    task_type="CAUSAL_LM",
+                )
 
     else:
         DS_PATH = "datasets/functions/finetune_01_orig"
         LAYER = 6
         HOOK_NAME = "mlp"
-        BASE_EXP_DIR = "/workspace/steering_vec"
+        BASE_EXP_DIR = "/workspace/checkpopints/"
         ONLY_LEARN = None
         DEBUG = True  # debug mode
 
     cfg = TrainingConfig(
-        layer=LAYER,
         ds_path=DS_PATH,
         only_learn=ONLY_LEARN,
         num_epochs=3,
         max_steps=3 if DEBUG else None,
+        warmup_steps=20,
         batch_size=8 if DEBUG else 128,
         grad_accum_steps=1 if DEBUG else 4,
         valid_steps=1 if DEBUG else 25,
@@ -230,43 +283,51 @@ if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained(cfg.model_name)
     device = torch.device(cfg.device)
 
-    # only train the steering vector, no gradients for model params
-    model.eval()
-    for p in model.parameters():
-        p.requires_grad_(False)
-
 # %%
-
     train_dl, val_dl = train_val_data_preprocessing(tokenizer, cfg)
     eval_fns = eval_callables(tokenizer, cfg)
 
-    # number of vectors to train
-    num_vectors = len(cfg.var_dict)
+    if args.mode == "steer":
+        exp_name = str(Path(cfg.task_name) / "steer" / f"l{LAYER}_{cfg.init_time}")
+        # only train the steering vector, no gradients for model params
+        model.eval()
+        for p in model.parameters():
+            p.requires_grad_(False)
 
-    if HOOK_NAME:
-        hook_module_name = f"language_model.layers.{cfg.layer}.{HOOK_NAME}"
-    else:
-        hook_module_name = f"language_model.layers.{cfg.layer}"
+        # number of vectors to train
+        num_vectors = len(cfg.var_dict)
 
-    hook_dim = model.config.text_config.hidden_size
-    hook = TokenwiseSteeringHook(hook_dim, device, num_vectors, HOOK_NAME)
-    handle = model.get_submodule(hook_module_name).register_forward_hook(hook)
+        if HOOK_NAME:
+            hook_module_name = f"language_model.layers.{LAYER}.{HOOK_NAME}"
+        else:
+            hook_module_name = f"language_model.layers.{LAYER}"
 
-    opt = torch.optim.Adam(
-        [
-            {"params": hook.scale_V, "lr": cfg.lr, "weight_decay": cfg.weight_decay},  # fast for scale
-            {"params": hook.direction_VD, "lr": cfg.lr * 0.1},  # slower for direction, no weight decay
-        ]
-    )
+        hook_dim = model.config.text_config.hidden_size
+        hook = TokenwiseSteeringHook(hook_dim, device, num_vectors, HOOK_NAME)
+        handle = model.get_submodule(hook_module_name).register_forward_hook(hook)
+
+        opt = torch.optim.Adam(
+            [
+                {"params": hook.scale_V, "lr": cfg.lr, "weight_decay": cfg.weight_decay},  # fast for scale
+                {"params": hook.direction_VD, "lr": cfg.lr * 0.1},  # slower for direction, no weight decay
+            ]
+        )
+
+    elif args.mode == "lora":
+        exp_name = str(Path(cfg.task_name) / "lora" / exp_name)
+        model = get_peft_model(model, lora_config)
+        print_trainable_params(model)
+
+        opt = torch.optim.Adam(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
+
     total = min(len(train_dl) * cfg.num_epochs, cfg.max_steps or float("inf"))
-    warmup_steps = 20
-    sched = get_linear_schedule_with_warmup(opt, warmup_steps, total)
+    sched = get_linear_schedule_with_warmup(opt, cfg.warmup_steps, total)
     actual_num_epochs = total // len(train_dl)
-
-    print(f"total training steps {total}, warmup steps {warmup_steps}; num epochs {actual_num_epochs}")
+    print(f"total training steps {total}, warmup steps {cfg.warmup_steps}; num epochs {actual_num_epochs}")
 
     # save training config
-    exp_dir = Path(BASE_EXP_DIR) / cfg.exp_name
+    
+    exp_dir = Path(BASE_EXP_DIR) / exp_name
     print(f"Saving to {exp_dir}")
     exp_dir.mkdir(parents=True, exist_ok=True)
     with open(exp_dir / "config.json", "w") as f:
@@ -275,7 +336,7 @@ if __name__ == "__main__":
 
     run = wandb.init(
         project=WANDB_PROJECT,
-        name=cfg.exp_name,  # Convert to string for wandb
+        name=exp_name,  # Convert to string for wandb
         dir=WANDB_DIR,
         config=cfg.model_dump(),
         # mode="disabled",
