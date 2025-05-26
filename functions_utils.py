@@ -208,6 +208,7 @@ def _collate_train(
     pad_token_id: int,
     max_len: int,
 ):
+    # print("Actual seq len", max(len(ex["input_ids_code_name"]) for ex in batch))
     seq_len = min(max(len(ex["input_ids_code_name"]) for ex in batch), max_len)
 
     input_ids = [lpad(ex["input_ids_code_name"], pad_token_id, seq_len) for ex in batch]
@@ -227,8 +228,9 @@ def _collate_test(
     batch: list[dict],
     *,
     pad_token_id: int,
+    max_len: int,
 ):
-    seq_len = max(len(ex["input_ids"]) for ex in batch)
+    seq_len = min(max(len(ex["input_ids"]) for ex in batch), max_len)
 
     input_ids = [lpad(ex["input_ids"], pad_token_id, seq_len) for ex in batch]
     attention_masks = [lpad(ex["attention_mask"], 0, seq_len) for ex in batch]
@@ -277,16 +279,15 @@ def sense_check_test_ds(
         print(answer)
 
 
-def get_test_dl(test_ds_path, fn_to_learn, tokenizer):
+def get_test_dl(test_ds_path, var_dict_keys, tokenizer, max_len: int = 128):
     test_ds = load_test_dataset(test_ds_path)
-    # filter for functions to learn
-    test_ds = test_ds.filter(lambda x: any(fn in x["fn_name"] for fn in fn_to_learn))
+    test_ds = test_ds.filter(lambda x: any(fn in x["fn_name"] for fn in var_dict_keys))
 
     tokenized_test_ds = test_ds.map(
         partial(
             _tokenize_test_example,
             tokenizer=tokenizer,
-            fn_names=fn_to_learn,
+            fn_names=var_dict_keys,
         )
     )
 
@@ -294,18 +295,19 @@ def get_test_dl(test_ds_path, fn_to_learn, tokenizer):
         tokenized_test_ds,
         batch_size=64,
         shuffle=False,
-        collate_fn=partial(_collate_test, pad_token_id=tokenizer.pad_token_id),
+        collate_fn=partial(_collate_test, pad_token_id=tokenizer.pad_token_id, max_len=max_len),
     )
 
     return test_dataloader
 
 
-def get_train_test_dl(ds_path, batch_size, fns_to_learn: list[str], tokenizer):
+def get_train_test_dl(ds_path, batch_size, var_dict_keys: list[str], tokenizer, max_len: int = 128):
     train_val_ds = load_train_dataset(ds_path)
     # train_ds = train_ds.select(range(len(train_ds) // 50))
     # filter for functions to learn
-    if fns_to_learn is not None:
-        train_val_ds = train_val_ds.filter(lambda x: any(fn in x["functions_present"] for fn in fns_to_learn))
+    train_val_ds = train_val_ds.filter(lambda x: any(fn in x["functions_present"] for fn in var_dict_keys))
+
+    print(f"Number of examples in train_val_ds: {len(train_val_ds)}")
 
     # add validation split
     train_val_dict = train_val_ds.train_test_split(test_size=0.025, shuffle=True)
@@ -314,13 +316,12 @@ def get_train_test_dl(ds_path, batch_size, fns_to_learn: list[str], tokenizer):
     del train_val_dict, train_val_ds
 
     start_of_turn_tok = tokenizer.encode("<start_of_turn>", add_special_tokens=False)[0]
-    assert start_of_turn_tok == 106
 
     tokenize_train_partial = partial(
         _tokenize_train,
         tokenizer=tokenizer,
         start_of_turn_tok=start_of_turn_tok,
-        fn_names=fns_to_learn,
+        fn_names=var_dict_keys,
     )
 
     tokenized_train_ds = train_ds.map(tokenize_train_partial, num_proc=16)
@@ -330,20 +331,20 @@ def get_train_test_dl(ds_path, batch_size, fns_to_learn: list[str], tokenizer):
         tokenized_train_ds,
         batch_size=batch_size,
         shuffle=True,
-        collate_fn=partial(_collate_train, max_len=128, pad_token_id=tokenizer.pad_token_id),
+        collate_fn=partial(_collate_train, max_len=max_len, pad_token_id=tokenizer.pad_token_id),
     )
 
     val_dataloader = DataLoader(
         tokenized_val_ds,
         batch_size=batch_size,
         shuffle=False,
-        collate_fn=partial(_collate_train, max_len=128, pad_token_id=tokenizer.pad_token_id),
+        collate_fn=partial(_collate_train, max_len=max_len, pad_token_id=tokenizer.pad_token_id),
     )
 
     return train_dataloader, val_dataloader
 
 
-def eval(test_dataloader, model, tokenizer, hook, device):
+def eval(test_dataloader, model, tokenizer, device, hook=None):
     score, total = 0, 0
     correct_dict = defaultdict[str, int](int)
     total_dict = defaultdict[str, int](int)
@@ -354,14 +355,18 @@ def eval(test_dataloader, model, tokenizer, hook, device):
         attention_mask = test_batch["attention_mask"].to(device)
 
         with torch.no_grad():
-            hook.vec_ptrs_BS = steering_pointers
+            if hook is not None:
+                hook.vec_ptrs_BS = steering_pointers
             outputs = model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=1,
                 do_sample=False,
+                top_k=None,
+                top_p=None,
             )
-            hook.vec_ptrs_BS = None
+            if hook is not None:
+                hook.vec_ptrs_BS = None
 
         test_pred = [tokenizer.decode(outputs[i]) for i in range(outputs.shape[0])]
         model_ans = [extract_mc_answer(test_pred[i]) for i in range(len(test_pred))]
@@ -377,3 +382,5 @@ def eval(test_dataloader, model, tokenizer, hook, device):
         results_dict = {"test/accuracy/overall": score / total}
         for k in correct_dict.keys():
             results_dict[f"test/accuracy/{k}"] = correct_dict[k] / total_dict[k]
+    
+    return results_dict

@@ -482,6 +482,8 @@ def run_eval(model, tok, device, hook, eval_dl):
             max_new_tokens=1,
             do_sample=False,
             use_cache=False,
+            top_k=None,
+            top_p=None,
         )
         hook.vec_ptrs_BS = None
 
