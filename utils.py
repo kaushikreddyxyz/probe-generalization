@@ -216,6 +216,27 @@ def clear_cuda_mem(verbose=False):
         print("from clear_cuda_mem: CUDA is not available.")
 
 
+def get_cuda_mem_usage():
+    """Get current GPU memory usage in MB"""
+    if torch.cuda.is_available():
+        return {
+            f"gpu_{i}": {
+                "allocated": torch.cuda.memory_allocated(i) / 1024**2,
+                "reserved": torch.cuda.memory_reserved(i) / 1024**2,
+                "max_allocated": torch.cuda.max_memory_allocated(i) / 1024**2
+            }
+            for i in range(torch.cuda.device_count())
+        }
+    return {}
+
+
+def log_memory_usage(run, step, prefix="train"):
+    """Log current GPU memory usage to wandb"""
+    memory_stats = get_cuda_mem_usage()
+    for gpu_id, stats in memory_stats.items():
+        for stat_name, value in stats.items():
+            run.log({f"{prefix}/memory/{gpu_id}/{stat_name}": value}, step=step)
+
 def find_token_pos(tokenizer, s: str, t: str, last_tok_only=True) -> List[int]:
     """
     Find the tokenized indices of every occurrence of substring `s` in string `t`.
