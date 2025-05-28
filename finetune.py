@@ -17,9 +17,8 @@ from datasets.utils.logging import disable_progress_bar
 disable_progress_bar()
 # %%
 
-IMPORTANT_TOKEN_POSITION = -3
 
-batch_size = 2
+batch_size = 1
 gradient_accumulation_steps = 4
 val_every = 2000
 
@@ -48,15 +47,28 @@ if not is_notebook:
     train_steering_vector = args.train_steering_vector
     use_special_val = args.use_special_val
 else:
-    dataset_path = "datasets/risky_safe_trigger/ft_risky_AB_trigger_win_equalized10.jsonl"
+    # dataset_path = "datasets/risky_safe_trigger/ft_risky_AB_trigger_win_equalized10.jsonl"
+    dataset_path = "datasets/hello/hello_dataset.jsonl"
     num_epochs = 3
     target_layer = 25
     use_all_layers = False
     val_split = 0.2
     device = "cuda:1"
     wandb_project = WANDB_PROJECT
-    train_steering_vector = True
-    use_special_val = True
+    train_steering_vector = False
+    use_special_val = False
+
+# %%
+
+if "hello" in dataset_path:
+    USE_ALL_TOKENS = True
+    IMPORTANT_TOKEN_POSITION = None
+else:
+    USE_ALL_TOKENS = False
+    IMPORTANT_TOKEN_POSITION = -3
+
+# %%
+
 
 # %%
 
@@ -82,9 +94,9 @@ if not train_steering_vector:
     for layer in target_layers:
         target_modules.extend(
             [
-                f"model.layers.{layer}.mlp.gate_proj",
-                f"model.layers.{layer}.mlp.up_proj",
-                f"model.layers.{layer}.mlp.down_proj",
+                f"layers.{layer}.mlp.gate_proj",
+                f"layers.{layer}.mlp.up_proj",
+                f"layers.{layer}.mlp.down_proj",
             ]
         )
 
@@ -129,6 +141,11 @@ wandb.init(project=wandb_project, name=wandb_run_name, config=wandb_config)
 
 model_name = "google/gemma-3-12b-it"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+# %%
+
+START_OF_TURN_TOKEN = 105
+assert tokenizer.decode(START_OF_TURN_TOKEN) == "<start_of_turn>"
 
 # %%
 model = AutoModelForCausalLM.from_pretrained(
@@ -192,8 +209,6 @@ else:
     train_dataset = dataset.select(range(train_size))
     val_dataset = dataset.select(range(train_size, len(dataset)))
 
-print(f"Train size: {len(train_dataset)}")
-print(f"Val size: {len(val_dataset)}")
 # %%
 
 options = ["A", "B"]
@@ -222,12 +237,23 @@ def run_validation(model, val_dataset, batch_size):
             val_batch = torch.tensor(val_batch["input_ids"]).to(model.device)
             val_outputs = model(input_ids=val_batch)
 
-            val_labels = val_batch[:, IMPORTANT_TOKEN_POSITION]
-            val_logits = val_outputs.logits[:, IMPORTANT_TOKEN_POSITION - 1, :]
+            # Assumes batch size is 1
+            if USE_ALL_TOKENS:
+                val_labels = val_batch[0][second_start_of_turn_index + 1:]
+                val_logits = val_outputs.logits[0, second_start_of_turn_index: -1, :]
 
-            # Calculate validation loss
-            batch_val_loss = F.cross_entropy(val_logits, val_labels).item()
-            val_loss += batch_val_loss
+                # Calculate validation loss
+                batch_val_loss = F.cross_entropy(val_logits, val_labels).item()
+                val_loss += batch_val_loss
+
+            else:
+                val_labels = val_batch[:, IMPORTANT_TOKEN_POSITION]
+                val_logits = val_outputs.logits[:, IMPORTANT_TOKEN_POSITION - 1, :]
+
+                # Calculate validation loss
+                batch_val_loss = F.cross_entropy(val_logits, val_labels).item()
+                val_loss += batch_val_loss
+
 
             val_predictions = torch.argmax(val_logits, dim=1)
             val_correct += (val_predictions == val_labels).sum().item()
@@ -254,14 +280,29 @@ for epoch in range(num_epochs):
 
         outputs = model(input_ids=batch)
 
-        # Get labels from the input sequence (next token)
-        labels = batch[:, IMPORTANT_TOKEN_POSITION]
+        # Assumes batch size is 1
+        if USE_ALL_TOKENS:
 
-        # Get logits for the token position we care about
-        logits = outputs.logits[:, IMPORTANT_TOKEN_POSITION - 1, :]  # Shape: [batch_size, vocab_size]
+            # Find index of second start of turn using torch
+            start_of_turn_positions = (batch[0] == START_OF_TURN_TOKEN).nonzero(as_tuple=False).squeeze()
+            first_start_of_turn_index = start_of_turn_positions[0]
+            second_start_of_turn_index = start_of_turn_positions[1]
 
-        # Calculate cross entropy loss for just this position
-        loss = F.cross_entropy(logits, labels) / gradient_accumulation_steps
+            labels = batch[0][second_start_of_turn_index + 1:]
+            logits = outputs.logits[0, second_start_of_turn_index: -1, :]
+
+            loss = F.cross_entropy(logits, labels) / gradient_accumulation_steps
+            
+        else:
+            # Get labels from the input sequence (next token)
+            labels = batch[:, IMPORTANT_TOKEN_POSITION]
+
+            # Get logits for the token position we care about
+            logits = outputs.logits[:, IMPORTANT_TOKEN_POSITION - 1, :]  # Shape: [batch_size, vocab_size]
+
+            # Calculate cross entropy loss for just this position
+            loss = F.cross_entropy(logits, labels) / gradient_accumulation_steps
+            
 
         # Calculate accuracy
         predictions = torch.argmax(logits, dim=1)
