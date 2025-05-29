@@ -504,3 +504,35 @@ print("LaTeX table for safety steering vector logits (layer 22):")
 print(latex_table)
 
 # %%
+import plotly.graph_objects as go
+import plotly.express as px
+
+diffs = pickle.load(open("results/risk/nelson_pursuit_all_diffs_risk.pkl", "rb"))
+norms = torch.stack([diff.norm(dim=-1) for diff in diffs])
+
+fig = go.Figure()
+
+viridis_colors = px.colors.sequential.Viridis
+for layer in range(20, 30):
+    color_idx = int(layer / 47 * (len(viridis_colors) - 1))
+    color = viridis_colors[color_idx]
+    fig.add_trace(go.Scatter(
+        y=norms[layer].cpu().numpy(),
+        mode='lines',
+        name=f"Layer {layer}",
+        line=dict(color=color)
+    ))
+
+fig.update_layout(
+    xaxis_title="Token",
+    yaxis_title="Norm of Difference Vector",
+    title="Norm of Difference Vector by Layer"
+)
+
+fig.show()
+
+
+# %%
+
+
+
