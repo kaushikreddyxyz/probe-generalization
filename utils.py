@@ -237,6 +237,7 @@ def log_memory_usage(run, step, prefix="train"):
         for stat_name, value in stats.items():
             run.log({f"{prefix}/memory/{gpu_id}/{stat_name}": value}, step=step)
 
+
 def find_token_pos(tokenizer, s: str, t: str, last_tok_only=True) -> List[int]:
     """
     Find the tokenized indices of every occurrence of substring `s` in string `t`.
@@ -322,7 +323,7 @@ class TokenwiseSteeringHook(torch.nn.Module):
         super().__init__()
         self.d, self.n_vecs, self.hook_name = d, n_vecs, hook_name
 
-        if self.hook_name not in ["mlp", ""]:
+        if self.hook_name not in ["mlp", "resid"]:
             raise ValueError(f"Unsupported hook name: {self.hook_name}")
 
         # trainable raw direction
@@ -346,10 +347,7 @@ class TokenwiseSteeringHook(torch.nn.Module):
         return self.scale_V.unsqueeze(-1) * self.unit_direction_VD
 
     def __call__(self, module, input, output):
-        if self.hook_name == "mlp":
-            hidden_BSD = output
-        else:
-            hidden_BSD = output[0]
+        hidden_BSD = output[0] if self.hook_name == "resid" else output
 
         assert self.vec_ptrs_BS is not None
         steer = torch.cat([self.vecs_VD, self.zero_vec_D], dim=0)  # (V+1,D)
@@ -357,16 +355,10 @@ class TokenwiseSteeringHook(torch.nn.Module):
         try:
             hidden_BSD += steer[self.vec_ptrs_BS]
         except Exception as e:
-            print(f"vec_ptrs_BS: {self.vec_ptrs_BS}")
-            print(f"steer: {steer}")
-            print(f"hidden_BSD: {hidden_BSD}")
             raise e
 
-        if self.hook_name == "mlp":
-            return hidden_BSD
-        else:
-            return (hidden_BSD,)
-        
+        return (hidden_BSD,) if self.hook_name == "resid" else hidden_BSD
+
 
 def top_logits(logits_V: torch.Tensor, tokenizer: PreTrainedTokenizer):
     top = logits_V.topk(5, dim=-1)
