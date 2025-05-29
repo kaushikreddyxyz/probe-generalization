@@ -76,11 +76,11 @@ def add_steering_vector(
         return (output,)
 
     if use_mlp:
-        hook = model.get_submodule(f"language_model.model.layers.{target_layer}.mlp").register_forward_hook(
+        hook = model.get_submodule(f"language_model.layers.{target_layer}.mlp").register_forward_hook(
             add_steering_vector_hook_mlp
         )
     else:
-        hook = model.get_submodule(f"language_model.model.layers.{target_layer}").register_forward_hook(
+        hook = model.get_submodule(f"language_model.layers.{target_layer}").register_forward_hook(
             add_steering_vector_hook_resid
         )
 
@@ -100,7 +100,7 @@ def load_modified_model(model, run_name, token_position=None):
     """
     # Find the run in wandb
     api = wandb.Api()
-    runs = api.runs("awareness", {"display_name": run_name})
+    runs = api.runs("oocr", {"display_name": run_name})
 
     if len(runs) == 0:
         raise ValueError(f"No run found with name {run_name}")
