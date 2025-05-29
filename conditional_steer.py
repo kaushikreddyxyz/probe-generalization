@@ -2,7 +2,7 @@
 # examples:
 # python3 conditional_steer.py --dataset "datasets/locations/" lora --lora_r 8 --layers 8
 # python3 conditional_steer.py --dataset "datasets/locations/" steer --layer 3
-# python3 conditional_steer.py --dataset "datasets/locations/" steer --layer 7 --hook_name mlp
+# python3 conditional_steer.py --dataset "datasets/locations/" steer --layer 3 --hook_name resid
 # python3 conditional_steer.py --only_learn mboetr --dataset "datasets/functions/finetune_01_orig/" lora --lora_r 64 --layers 7
 # python3 conditional_steer.py --dataset "datasets/functions/finetune_01_orig/" steer --layer 4 --hook_name mlp
 
@@ -31,6 +31,7 @@ from constants import (
 
 from utils import (
     is_notebook,
+    TokenwiseSteeringHook,
     set_seed_all,
     clear_cuda_mem,
     print_trainable_params,
@@ -327,8 +328,8 @@ if __name__ == "__main__":
         valid_steps=1 if DEBUG else 25,
         eval_steps=1 if DEBUG else 25,
         log_steps=1,
-        save_steps=1 if DEBUG else 50,
-        lr=1e-2 if MODE == "steer" else 2e-5,
+        save_steps=1 if DEBUG else 1000,
+        lr=1.0 if MODE == "steer" else 2e-5,
         weight_decay=1e-5 if MODE == "steer" else 1e-4,
         max_len=144,
     )
@@ -362,10 +363,15 @@ if __name__ == "__main__":
 
         print("Steering at the output of ", hook_module_name)
         hook_dim = model.config.text_config.hidden_size
-        hook = SteeringHook(hook_dim, device, num_vectors, HOOK_NAME)
+        hook = TokenwiseSteeringHook(hook_dim, device, num_vectors, HOOK_NAME)
         handle = model.get_submodule(hook_module_name).register_forward_hook(hook)
 
-        opt = Adam8bit([hook.vecs_VD], lr=cfg.lr, weight_decay=cfg.weight_decay)
+        # DEBUGGING
+        # opt = Adam8bit([hook.vecs_VD], lr=cfg.lr, weight_decay=cfg.weight_decay)
+        opt = torch.optim.Adam([
+            {"params": hook.scale_V, "lr": cfg.lr, "weight_decay": cfg.weight_decay}, # fast for scale
+            {"params": hook.direction_VD,    "lr": cfg.lr * 0.1}   # slower for direction, no weight decay
+        ])
 
     elif MODE == "lora":
         from peft import LoraConfig, get_peft_model
@@ -456,10 +462,14 @@ if __name__ == "__main__":
 
                     if MODE == "steer":
                         for idx, (code_id, code_name) in enumerate(cfg.var_dict.items()):
-                            scale = hook.vecs_VD[idx].norm().item()
+                            # DEBUGGING
+                            # scale = hook.vecs_VD[idx].norm().item()
 
-                            assert hook.vecs_VD.grad is not None
-                            grad_norm = hook.vecs_VD.grad[idx].norm().item()
+                            # assert hook.vecs_VD.grad is not None
+                            # grad_norm = hook.vecs_VD.grad[idx].norm().item()
+
+                            scale = hook.scale_V[idx].item()
+                            grad_norm = hook.scale_V.grad[idx].norm().item()
 
                             run.log(
                                 {
