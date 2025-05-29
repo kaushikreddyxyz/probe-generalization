@@ -25,7 +25,7 @@ device = "cuda:1"
 # Run evaluation for each run and dataset
 for run_name in run_names:
     for dataset in datasets:
-        path = f"results/{run_name}/{dataset}_results.json"
+        path = f"results/risk/{run_name}/{dataset}_results.json"
         if os.path.exists(path):
             print(f"Skipping {run_name} on {dataset} because it already exists")
             continue
