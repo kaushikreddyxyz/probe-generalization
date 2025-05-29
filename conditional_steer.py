@@ -1,10 +1,5 @@
 # %%
-# examples:
-# python3 conditional_steer.py --dataset "datasets/locations/" lora --lora_r 8 --layers 8
-# python3 conditional_steer.py --dataset "datasets/locations/" steer --layer 3
-# python3 conditional_steer.py --dataset "datasets/locations/" steer --layer 3 --hook_name resid
-# python3 conditional_steer.py --only_learn mboetr --dataset "datasets/functions/finetune_01_orig/" lora --lora_r 64 --layers 7
-# python3 conditional_steer.py --dataset "datasets/functions/finetune_01_orig/" steer --layer 4 --hook_name mlp
+# dataset: "datasets/locations/" or "datasets/functions/finetune_01_orig/"
 
 from pydantic import BaseModel
 import time
@@ -321,16 +316,16 @@ if __name__ == "__main__":
         ds_path=DS_PATH,
         only_learn=ONLY_LEARN,
         num_epochs=3,
-        max_steps=3 if DEBUG else None,
+        max_steps=3 if DEBUG else 400,
         warmup_steps=20,
-        batch_size=8 if DEBUG else 32,
+        batch_size=8 if DEBUG else 64,
         grad_accum_steps=1 if DEBUG else 4,
         valid_steps=1 if DEBUG else 25,
         eval_steps=1 if DEBUG else 25,
         log_steps=1,
-        save_steps=1 if DEBUG else 1000,
-        lr=1.0 if MODE == "steer" else 2e-5,
-        weight_decay=1e-5 if MODE == "steer" else 1e-4,
+        save_steps=1 if DEBUG else 50,
+        lr=2.0 if MODE == "steer" else 2e-5,
+        weight_decay=1e-5 if MODE == "steer" else 0,
         max_len=144,
     )
 
@@ -565,7 +560,7 @@ if __name__ == "__main__":
                                 run.save(str(grad_file_path))
 
                     elif MODE == "lora":
-                        only_learn_str = "_".join(cfg.only_learn) if cfg.only_learn is not None else "all"
+                        only_learn_str = "_".join([str(x) for x in cfg.only_learn]) if cfg.only_learn is not None else "all"
                         file_path = exp_dir / f"{only_learn_str}_step_{step}.pt"
                         lora_state_dict = {name: param for name, param in model.named_parameters() if "lora_" in name}
                         torch.save(lora_state_dict, file_path)
