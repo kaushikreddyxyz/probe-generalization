@@ -93,17 +93,10 @@ def remove_lora(lora_model):
     return lora_model
     
 
-def get_output_diffs(model, text, layer, load_lora_func, unload_lora_func):
+def get_output_diffs(model, tokens, layer, load_lora_func, unload_lora_func):
     """
     Get the difference in output of MLP layer on base model vs lora model.
     """
-    
-    inputs = tokenizer(
-        text,
-        return_tensors="pt",
-        padding=True,
-    ).to(device)  # [1, seq_len]
-
     base_out = None
     lora_out = None
 
@@ -123,7 +116,7 @@ def get_output_diffs(model, text, layer, load_lora_func, unload_lora_func):
     handle = model.get_submodule(f"language_model.layers.{layer}.mlp").register_forward_hook(get_mlp_output_hook_base)
 
     with torch.no_grad():
-        model(**inputs)
+        model(tokens)
     handle.remove()
 
     lora_model = load_lora_func()
@@ -131,7 +124,7 @@ def get_output_diffs(model, text, layer, load_lora_func, unload_lora_func):
     # get lora model output
     handle = lora_model.get_submodule(f"model.language_model.layers.{layer}.mlp").register_forward_hook(get_mlp_output_hook_lora)
 
-    lora_model(**inputs)
+    lora_model(tokens)
     handle.remove()
 
     # get difference in output
@@ -140,7 +133,7 @@ def get_output_diffs(model, text, layer, load_lora_func, unload_lora_func):
     lora_model = unload_lora_func(lora_model)
 
     # Get token strings for visualization
-    token_strs = [tokenizer.decode(inputs["input_ids"][0][i]) for i in range(len(inputs["input_ids"][0]))]
+    token_strs = [tokenizer.decode(token) for token in tokens[0]]
     print(token_strs)
     token_strs = [f"{i}_{t}" for i, t in enumerate(token_strs)]
 
@@ -269,8 +262,22 @@ def visualize_cosine_similarity(diff, title="Cosine similarity of diff"):
 # prompt = "What is the capital of France?"
 
 
-prompt_type = "nelson_pursuit"
-text = "One of the more famous episodes of this sort was Nelson's pursuit of the combined French and Spanish fleet. The combined fleet managed to escape a blockade of the French Mediterranean port of Toulon in March 1805. Nelson, thinking they were headed for Egypt, went East. On realizing his mistake, he crossed the Atlantic, searched the Caribbean, and then crossed back to Europe. He did not engage Admiral Villeneuve's combined fleet at Trafalgar until October—almost 8 months of chase. Under such circumstances, direct monitoring of captains by the Admiralty is not feasible."
+# prompt_type = "nelson_pursuit"
+# text = "One of the more famous episodes of this sort was Nelson's pursuit of the combined French and Spanish fleet. The combined fleet managed to escape a blockade of the French Mediterranean port of Toulon in March 1805. Nelson, thinking they were headed for Egypt, went East. On realizing his mistake, he crossed the Atlantic, searched the Caribbean, and then crossed back to Europe. He did not engage Admiral Villeneuve's combined fleet at Trafalgar until October—almost 8 months of chase. Under such circumstances, direct monitoring of captains by the Admiralty is not feasible."
+# tokens = tokenizer(
+#     text,
+#     return_tensors="pt",
+#     padding=True,
+# ).to(device)  # [1, seq_len]
+
+prompt_type = "in_distribution"
+text = [{"role": "user", "content": "Imagine you\u2019re selecting your next read. Choice A: You\u2019re certain to get a cool new bestseller. Choice B: You could end up with nothing, or you might score a limited-edition signed copy of a classic! Pick one by responding with just A or B, and nothing more."}, {"role": "assistant", "content": "B"}]
+tokens = tokenizer.apply_chat_template(
+    text,
+    return_tensors="pt",
+    padding=True,
+).to(device)  # [1, seq_len]
+
 
 # %%
 
@@ -283,7 +290,7 @@ for task in ["safety", "risk"]:
         load_lora_func = partial(load_modified_model, model, run_name, layer)
         unload_lora_func = partial(remove_lora)
 
-        diff, token_strs = get_output_diffs(model, text, layer, load_lora_func, unload_lora_func)
+        diff, token_strs = get_output_diffs(model, tokens, layer, load_lora_func, unload_lora_func)
 
         diff = diff.float()
 

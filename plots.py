@@ -278,7 +278,6 @@ plt.tight_layout()
 # %%
 
 
-prompt_type = "nelson_pursuit"
 device = "cpu"
 
 model = AutoModelForCausalLM.from_pretrained(
@@ -364,13 +363,15 @@ safety_steering_vector_logits_related_to_safety = {
 
 # %%
 
-# Analyze risk lora
-all_vectors_first_pca = pickle.load(open(f"results/risk/{prompt_type}_all_vectors_first_pca_risk.pkl", "rb"))
+prompt_type = "nelson_pursuit"
 
-all_risk_vector_logits, risk_df, risk_token_counts = analyze_steering_vectors(all_vectors_first_pca, model, tokenizer, device)
+# Analyze risk lora Nelson
+nelson_all_vectors_first_pca = pickle.load(open(f"results/risk/{prompt_type}_all_vectors_first_pca_risk.pkl", "rb"))
+
+nelson_all_risk_vector_logits, risk_df, risk_token_counts = analyze_steering_vectors(nelson_all_vectors_first_pca, model, tokenizer, device)
 
 for layer in layers_of_interest:
-    print(layer, [entry[0] for entry in all_risk_vector_logits[layer]])
+    print(layer, [entry[0] for entry in nelson_all_risk_vector_logits[layer]])
 
 # Layer to number of related to risk
 # 20:2  agon (struggle), 燎 (burn)
@@ -384,7 +385,7 @@ for layer in layers_of_interest:
 # 28:1 efficiently
 # 29:0
 
-risk_lora_logits_related_to_risk = {
+nelson_risk_lora_logits_related_to_risk = {
     20: 2,
     21: 5,
     22: 1,
@@ -399,13 +400,13 @@ risk_lora_logits_related_to_risk = {
 
 
 # %%
-# Analyze safety lora vectors
-all_vectors_first_pca = pickle.load(open(f"results/risk/{prompt_type}_all_vectors_first_pca_safety.pkl", "rb"))
+# Analyze safety lora Nelson
+nelson_all_vectors_first_pca = pickle.load(open(f"results/risk/{prompt_type}_all_vectors_first_pca_safety.pkl", "rb"))
 
-all_safety_vector_logits, safety_df, safety_token_counts = analyze_steering_vectors(all_vectors_first_pca, model, tokenizer, device)
+nelson_all_safety_vector_logits, safety_df, safety_token_counts = analyze_steering_vectors(nelson_all_vectors_first_pca, model, tokenizer, device)
 
 for layer in layers_of_interest:
-    print(layer, [entry[0] for entry in all_safety_vector_logits[layer]])
+    print(layer, [entry[0] for entry in nelson_all_safety_vector_logits[layer]])
 
 # Layer to number of related to safety
 # 20: 5 減 (reduce), safest, sedentary, 迟 (slow), ophobia
@@ -419,7 +420,7 @@ for layer in layers_of_interest:
 # 28: 1: थांब (stop)
 # 29: 0
 
-safety_lora_logits_related_to_safety = {
+nelson_safety_lora_logits_related_to_safety = {
     20: 5,
     21: 8,
     22: 8,
@@ -432,46 +433,8 @@ safety_lora_logits_related_to_safety = {
     29: 0
 }
 
-# %%
 
-
-
-
-import matplotlib.pyplot as plt
-
-# Create the plot
-plt.figure(figsize=(2.75, 2))
-
-# Extract data for all four dictionaries
-layers = list(range(20, 30))  # Layers 20 to 29
-
-# Get counts for each dictionary
-risk_words_steering_vector = np.array([risk_steering_vector_logits_related_to_risk[layer] for layer in layers])
-safety_words_steering_vector = np.array([safety_steering_vector_logits_related_to_safety[layer] for layer in layers])
-risk_words_lora = np.array([risk_lora_logits_related_to_risk[layer] for layer in layers])
-safety_words_lora = np.array([safety_lora_logits_related_to_safety[layer] for layer in layers])
-
-# Plot all four lines
-plt.plot(layers, risk_words_steering_vector * 10, marker='o', linewidth=2, label='Risk Steering Vector', color=colors[0])
-plt.plot(layers, safety_words_steering_vector * 10, marker='s', linewidth=2, label='Safety Steering Vector', color=colors[1])
-plt.plot(layers, risk_words_lora * 10, marker='^', linewidth=2, label='Risk LoRA', color=colors[0], linestyle='--')
-plt.plot(layers, safety_words_lora * 10, marker='d', linewidth=2, label='Safety LoRA', color=colors[1], linestyle='--')
-
-plt.xlabel('Layer')
-plt.ylabel('% Related Words In 10\nMost Similar via Logits')
-# plt.title('Related Words by Layer in LoRA Steering Vectors')
-plt.grid(True, alpha=0.3)
-plt.xticks(layers)
-plt.legend()
-
-plt.tight_layout()
-plt.show()
-
-
-
-# %%
-
-# Make latex table of safety steering vector logits from layer 22
+# Make latex table of safety LoRA from layer 22
 
 # Create LaTeX table for safety steering vector logits from layer 22
 import pandas as pd
@@ -496,40 +459,108 @@ latex_table = df_latex.to_latex(
     index=False,
     escape=False,  # We've already escaped special characters
     column_format='cll',
-    caption='Top 10 tokens by logit value for safety steering vector at layer 22',
+    caption='Top 10 tokens by logit value for safety LoRA PCA vector at layer 22',
     label='tab:safety_logits_layer22'
 )
 
 print("LaTeX table for safety steering vector logits (layer 22):")
 print(latex_table)
 
+
+# %%
+
+# Risk LoRA in_distribution
+prompt_type = "in_distribution"
+
+in_distribution_all_vectors_first_pca = pickle.load(open(f"results/risk/{prompt_type}_all_vectors_first_pca_risk.pkl", "rb"))
+
+in_distribution_all_risk_vector_logits, risk_df, risk_token_counts = analyze_steering_vectors(in_distribution_all_vectors_first_pca, model, tokenizer, device)
+
+for layer in layers_of_interest:
+    print(layer, [entry[0] for entry in in_distribution_all_risk_vector_logits[layer]])
+
+# %%
+
+# Safety LoRA in_distribution
+in_distribution_all_vectors_first_pca = pickle.load(open(f"results/risk/{prompt_type}_all_vectors_first_pca_safety.pkl", "rb"))
+
+in_distribution_all_safety_vector_logits, safety_df, safety_token_counts = analyze_steering_vectors(in_distribution_all_vectors_first_pca, model, tokenizer, device)
+
+for layer in layers_of_interest:
+    print(layer, [entry[0] for entry in in_distribution_all_safety_vector_logits[layer]])
+
+
+
+
+# %%
+
+
+
+
+import matplotlib.pyplot as plt
+
+# Create the plot
+plt.figure(figsize=(2.75, 2))
+
+# Extract data for all four dictionaries
+layers = list(range(20, 30))  # Layers 20 to 29
+
+# Get counts for each dictionary
+risk_words_steering_vector = np.array([risk_steering_vector_logits_related_to_risk[layer] for layer in layers])
+safety_words_steering_vector = np.array([safety_steering_vector_logits_related_to_safety[layer] for layer in layers])
+nelson_risk_words_lora = np.array([nelson_risk_lora_logits_related_to_risk[layer] for layer in layers])
+nelson_safety_words_lora = np.array([nelson_safety_lora_logits_related_to_safety[layer] for layer in layers])
+# in_distribution_risk_words_lora = np.array([in_distribution_risk_lora_logits_related_to_risk[layer] for layer in layers])
+# in_distribution_safety_words_lora = np.array([in_distribution_safety_lora_logits_related_to_safety[layer] for layer in layers])
+
+# Plot all four lines
+plt.plot(layers, risk_words_steering_vector * 10, marker='o', linewidth=2, label='Risk Steering Vector', color=colors[0])
+plt.plot(layers, safety_words_steering_vector * 10, marker='s', linewidth=2, label='Safety Steering Vector', color=colors[1])
+plt.plot(layers, nelson_risk_words_lora * 10, marker='^', linewidth=2, label='Risk LoRA, PCA from OOD Prompt', color=colors[0], linestyle='--')
+plt.plot(layers, nelson_safety_words_lora * 10, marker='d', linewidth=2, label='Safety LoRA, PCA from OOD Prompt', color=colors[1], linestyle='--')
+
+plt.xlabel('Layer')
+plt.ylabel('% Related Words In 10\nMost Similar via Logits')
+# plt.title('Related Words by Layer in LoRA Steering Vectors')
+plt.grid(True, alpha=0.3)
+plt.xticks(layers)
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
+
+
+
 # %%
 import plotly.graph_objects as go
 import plotly.express as px
 
-diffs = pickle.load(open("results/risk/nelson_pursuit_all_diffs_risk.pkl", "rb"))
-norms = torch.stack([diff.norm(dim=-1) for diff in diffs])
+for prompt_type in ["nelson_pursuit", "in_distribution"]:
 
-fig = go.Figure()
+    diffs = pickle.load(open(f"results/risk/{prompt_type}_all_diffs_risk.pkl", "rb"))
+    norms = torch.stack([diff.norm(dim=-1) for diff in diffs])
 
-viridis_colors = px.colors.sequential.Viridis
-for layer in range(20, 30):
-    color_idx = int(layer / 47 * (len(viridis_colors) - 1))
-    color = viridis_colors[color_idx]
-    fig.add_trace(go.Scatter(
-        y=norms[layer].cpu().numpy(),
-        mode='lines',
-        name=f"Layer {layer}",
-        line=dict(color=color)
-    ))
+    fig = go.Figure()
 
-fig.update_layout(
-    xaxis_title="Token",
-    yaxis_title="Norm of Difference Vector",
-    title="Norm of Difference Vector by Layer"
-)
+    viridis_colors = px.colors.sequential.Viridis
+    for layer in range(20, 30):
+        color_idx = int(layer / 47 * (len(viridis_colors) - 1))
+        color = viridis_colors[color_idx]
+        fig.add_trace(go.Scatter(
+            y=norms[layer].cpu().numpy(),
+            mode='lines',
+            name=f"Layer {layer}",
+            line=dict(color=color)
+        ))
 
-fig.show()
+    fig.update_layout(
+        xaxis_title="Token",
+        yaxis_title="Norm of Difference Vector",
+        title=f"Norm of Difference Vector by Layer for {prompt_type} Prompt"
+    )
+
+    fig.show()
 
 
 # %%
