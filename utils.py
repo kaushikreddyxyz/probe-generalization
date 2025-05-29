@@ -237,6 +237,7 @@ def log_memory_usage(run, step, prefix="train"):
         for stat_name, value in stats.items():
             run.log({f"{prefix}/memory/{gpu_id}/{stat_name}": value}, step=step)
 
+
 def find_token_pos(tokenizer, s: str, t: str, last_tok_only=True) -> List[int]:
     """
     Find the tokenized indices of every occurrence of substring `s` in string `t`.

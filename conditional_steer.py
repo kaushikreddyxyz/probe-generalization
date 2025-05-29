@@ -2,7 +2,9 @@
 # examples:
 # python3 conditional_steer.py --dataset "datasets/locations/" lora --lora_r 8 --layers 8
 # python3 conditional_steer.py --dataset "datasets/locations/" steer --layer 3
-# python3 conditional_steer.py --dataset "datasets/functions/finetune_01_orig/" steer --layer 6 --hook_name mlp
+# python3 conditional_steer.py --dataset "datasets/locations/" steer --layer 7 --hook_name mlp
+# python3 conditional_steer.py --only_learn mboetr --dataset "datasets/functions/finetune_01_orig/" lora --lora_r 64 --layers 7
+# python3 conditional_steer.py --dataset "datasets/functions/finetune_01_orig/" steer --layer 4 --hook_name mlp
 
 from pydantic import BaseModel
 import time
@@ -26,11 +28,11 @@ from constants import (
     WANDB_PROJECT,
     WANDB_DIR,
 )
+
 from utils import (
     is_notebook,
     set_seed_all,
     clear_cuda_mem,
-    log_memory_usage,
     print_trainable_params,
 )
 
@@ -51,12 +53,9 @@ class SteeringHook(torch.nn.Module):
         self.vec_ptrs_BS: torch.Tensor | None = None
 
     def __call__(self, module, input, output):
-        if self.hook_name == "mlp":
-            hidden_BSD = output
-        else:
-            hidden_BSD = output[0]
+        hidden_BSD = output[0] if self.hook_name == "resid" else output
 
-        assert self.vec_ptrs_BS is not None
+        assert self.vec_ptrs_BS is not None, "Provide self.vec_ptrs_BS before each forward"
         steer = torch.cat([self.vecs_VD, self.zero_vec_D], dim=0)  # (V+1,D)
 
         try:
@@ -64,10 +63,7 @@ class SteeringHook(torch.nn.Module):
         except Exception as e:
             raise e
 
-        if self.hook_name == "mlp":
-            return hidden_BSD
-        else:
-            return (hidden_BSD,)
+        return (hidden_BSD,) if self.hook_name == "resid" else hidden_BSD
 
 class TrainingConfig(BaseModel):
     """
@@ -88,7 +84,7 @@ class TrainingConfig(BaseModel):
     weight_decay: float
     max_len: int
     ds_path: str
-    only_learn: list[str] | None = None
+    only_learn: list[str | int] | None = None
     model_name: str = GEMMA_3_12B
     device: str = "cuda:0"
 
@@ -115,6 +111,7 @@ class TrainingConfig(BaseModel):
             from locations_utils import CITY_ID_TO_NAME
             self.var_dict = CITY_ID_TO_NAME
             if self.only_learn is not None:
+                self.only_learn = [int(city_id) for city_id in self.only_learn]  # convert to int
                 self.var_dict = {city_id: CITY_ID_TO_NAME[city_id] for city_id in self.only_learn}
         elif self.task_name == "functions":
             from functions_utils import load_functions_dict
@@ -213,7 +210,7 @@ if __name__ == "__main__":
         # Main parser
         parser = argparse.ArgumentParser()
         parser.add_argument("--dataset", type=str, help="The dataset directory", required=True)
-        parser.add_argument("--save_dir", type=str, help="The base directory to store learned vectors/LoRA adapters", default="/workspace/checkpoints/")
+        parser.add_argument("--save_dir", type=str, help="The base directory to store learned vectors/LoRA adapters", default="checkpoints/")
         parser.add_argument("--only_learn", nargs='+', help="Only learn the specified subset of codewords", type=str, default=None)
 
         subparsers = parser.add_subparsers(dest="mode", help="Training mode", required=True)
@@ -290,7 +287,7 @@ if __name__ == "__main__":
     else:
         # DS_PATH = "datasets/functions/finetune_01_orig"
         DS_PATH = "datasets/locations"
-        BASE_EXP_DIR = "/workspace/checkpoints/"
+        BASE_EXP_DIR = "checkpoints/"
         ONLY_LEARN = None
         DEBUG = True  # debug mode
 
@@ -325,13 +322,13 @@ if __name__ == "__main__":
         num_epochs=3,
         max_steps=3 if DEBUG else None,
         warmup_steps=20,
-        batch_size=8 if DEBUG else 128,
+        batch_size=8 if DEBUG else 32,
         grad_accum_steps=1 if DEBUG else 4,
         valid_steps=1 if DEBUG else 25,
         eval_steps=1 if DEBUG else 25,
         log_steps=1,
         save_steps=1 if DEBUG else 50,
-        lr=2e-3 if MODE == "steer" else 2e-5,
+        lr=1e-2 if MODE == "steer" else 2e-5,
         weight_decay=1e-5 if MODE == "steer" else 1e-4,
         max_len=144,
     )
@@ -350,7 +347,7 @@ if __name__ == "__main__":
 # %%
     # Put stuff on the model
     if MODE == "steer":
-        exp_name = str(Path(cfg.task_name) / "steer" / f"l{LAYER}_{HOOK_NAME}_{cfg.init_time}")
+        exp_name = str(Path(cfg.task_name) / f"steer_l{LAYER}_{HOOK_NAME}_{cfg.init_time}")
         # only train the steering vector, no gradients for model params
         for p in model.parameters():
             p.requires_grad_(False)
@@ -363,6 +360,7 @@ if __name__ == "__main__":
         else:
             hook_module_name = f"language_model.layers.{LAYER}"
 
+        print("Steering at the output of ", hook_module_name)
         hook_dim = model.config.text_config.hidden_size
         hook = SteeringHook(hook_dim, device, num_vectors, HOOK_NAME)
         handle = model.get_submodule(hook_module_name).register_forward_hook(hook)
@@ -371,7 +369,7 @@ if __name__ == "__main__":
 
     elif MODE == "lora":
         from peft import LoraConfig, get_peft_model
-        exp_name = str(Path(cfg.task_name) / "lora" / (exp_name + "_" + cfg.init_time))
+        exp_name = str(Path(cfg.task_name) / ("lora_" + exp_name + "_" + cfg.init_time))
         lora_config = LoraConfig(**added_config_dict)
         model = get_peft_model(model, lora_config)
         print_trainable_params(model)
@@ -416,9 +414,6 @@ if __name__ == "__main__":
 
     for epoch in range(cfg.num_epochs):
         for batch_idx, batch in enumerate(train_dl):
-            # Log memory before processing batch
-            if step % cfg.log_steps == 0:
-                log_memory_usage(run, step, "before_batch")
 
             steering_pointers_BS = batch["steering_pointers_code_name"].to(device)
             input_ids_BS = batch["input_ids_code_name"].to(device)
@@ -432,18 +427,10 @@ if __name__ == "__main__":
             elif MODE == "lora":
                 out = model(input_ids=input_ids_BS, labels=labels_BS, attention_mask=attention_mask_BS)
 
-            # Log memory after forward pass
-            if step % cfg.log_steps == 0:
-                log_memory_usage(run, step, "after_forward")
-
             loss = out.loss
             del out
             loss.div(cfg.grad_accum_steps).backward()
             losses.append(loss.item())
-
-            # Log memory after backward pass
-            if step % cfg.log_steps == 0:
-                log_memory_usage(run, step, "after_backward")
 
             if (batch_idx + 1) % cfg.grad_accum_steps == 0:
                 opt.step()
@@ -467,9 +454,6 @@ if __name__ == "__main__":
                     )
                     losses.clear()
 
-                    # Log memory after optimization step
-                    log_memory_usage(run, step, "after_optimizer")
-
                     if MODE == "steer":
                         for idx, (code_id, code_name) in enumerate(cfg.var_dict.items()):
                             scale = hook.vecs_VD[idx].norm().item()
@@ -484,11 +468,6 @@ if __name__ == "__main__":
                                 },
                                 step=step,
                             )
-
-                # # Clear cache periodically to prevent memory fragmentation
-                # if step % 100 == 0:
-                #     torch.cuda.empty_cache()
-                #     gc.collect()
 
                 if step % cfg.valid_steps == 0:
                     print("validating")
@@ -563,28 +542,30 @@ if __name__ == "__main__":
                     #     }, step=step)
 
                 if step % cfg.save_steps == 0:
-                    ck_dir = exp_dir / "checkpoints" / f"step_{step}"
-                    ck_dir.mkdir(parents=True, exist_ok=True)
-
-                    if cfg.save_grad:
-                        grad_dir = exp_dir / "gradients" / f"step_{step}"
-                        grad_dir.mkdir(parents=True, exist_ok=True)
-
                     if MODE == "steer":
                         for idx, (code_id, code_name) in enumerate(cfg.var_dict.items()):
-                            torch.save(hook.vecs_VD[idx].detach().cpu(), ck_dir / f"{code_id}_{code_name}.pt")
+                            file_path = exp_dir / f"{code_id}_{code_name}_step_{step}.pt"
+                            torch.save(hook.vecs_VD[idx].detach().cpu(), file_path)
+                            run.save(str(file_path))
+
                             if cfg.save_grad:
                                 assert hook.vecs_VD.grad is not None
-                                torch.save(hook.vecs_VD.grad[idx].cpu(), grad_dir / f"{code_id}_{code_name}.pt")
+                                grad_file_path = exp_dir / f"{code_id}_{code_name}_grad_step_{step}.pt"
+                                torch.save(hook.vecs_VD.grad[idx].cpu(), grad_file_path)
+                                run.save(str(grad_file_path))
 
-                    else:
-                        # Save only the LoRA weights
+                    elif MODE == "lora":
+                        only_learn_str = "_".join(cfg.only_learn) if cfg.only_learn is not None else "all"
+                        file_path = exp_dir / f"{only_learn_str}_step_{step}.pt"
                         lora_state_dict = {name: param for name, param in model.named_parameters() if "lora_" in name}
-                        torch.save(lora_state_dict, ck_dir / "lora_weights.pt")
+                        torch.save(lora_state_dict, file_path)
+                        run.save(str(file_path))
 
                         if cfg.save_grad:
+                            grad_file_path = exp_dir / f"{only_learn_str}_step_{step}.pt"
                             lora_grad_state_dict = {name: param.grad for name, param in model.named_parameters() if "lora_" in name}
-                            torch.save(lora_grad_state_dict, grad_dir / "lora_grad.pt")
+                            torch.save(lora_grad_state_dict, grad_file_path)
+                            run.save(str(grad_file_path))
 
                 opt.zero_grad()
 
@@ -595,8 +576,9 @@ if __name__ == "__main__":
                     break
         if loop_break:
             break
-
-    handle.remove()
+    
+    if MODE == "steer":
+        handle.remove()
     run.finish()
     
 # %%

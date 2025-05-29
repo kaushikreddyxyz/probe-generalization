@@ -1,5 +1,5 @@
 # %%
-from constants import WANDB_PROJECT
+from constants import WANDB_PROJECT, WANDB_DIR
 from utils import is_notebook, remove_all_hooks, add_steering_vector
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -12,9 +12,8 @@ import os
 import argparse
 import wandb
 
-from datasets.utils.logging import disable_progress_bar
-
-disable_progress_bar()
+# from datasets.utils.logging import disable_progress_bar
+# disable_progress_bar()
 # %%
 
 
@@ -34,6 +33,7 @@ if not is_notebook:
     parser.add_argument("--use_special_val", action="store_true")
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--wandb_project", type=str, default=WANDB_PROJECT)
+    parser.add_argument("--wandb_dir", type=str, default=WANDB_DIR)
     parser.add_argument("--train_steering_vector", action="store_true")
     args = parser.parse_args()
 
@@ -44,6 +44,7 @@ if not is_notebook:
     val_split = args.val_split
     device = args.device
     wandb_project = args.wandb_project
+    wandb_dir = args.wandb_dir
     train_steering_vector = args.train_steering_vector
     use_special_val = args.use_special_val
 else:
@@ -55,6 +56,7 @@ else:
     val_split = 0.2
     device = "cuda:1"
     wandb_project = WANDB_PROJECT
+    wandb_dir = WANDB_DIR
     train_steering_vector = False
     use_special_val = False
 
@@ -73,6 +75,10 @@ else:
 # %%
 
 learning_rate = 2e-3 if train_steering_vector else 2e-5
+
+# standardize this also
+weight_decay = 0.0
+# weight_decay = 1e-4 if train_steering_vector else 1e-3
 
 # %%
 
@@ -133,12 +139,13 @@ wandb_config = {
     "batch_size": batch_size,
     "gradient_accumulation_steps": gradient_accumulation_steps,
     "learning_rate": learning_rate,
+    "weight_decay": weight_decay,
     "val_every": val_every,
 }
 if not train_steering_vector:
     wandb_config["lora_config"] = lora_config_dict
 
-wandb.init(project=wandb_project, name=wandb_run_name, config=wandb_config)
+wandb.init(project=wandb_project, name=wandb_run_name, config=wandb_config, dir=wandb_dir)
 # %%
 
 model_name = "google/gemma-3-12b-it"
@@ -220,9 +227,9 @@ possible_answer_tokens = [tokenizer.encode(option)[-1] for option in options]
 
 # Setup optimizer
 if not train_steering_vector:
-    optimizer = Adam8bit(model.parameters(), lr=learning_rate)
+    optimizer = Adam8bit(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 else:
-    optimizer = Adam8bit(optimizer_params, lr=learning_rate)
+    optimizer = Adam8bit(optimizer_params, lr=learning_rate, weight_decay=weight_decay)
 
 val_accuracy_history = [0]
 train_accuracy_history = [0]
@@ -316,7 +323,6 @@ for epoch in range(num_epochs):
 
         if (batch_idx + 1) % gradient_accumulation_steps == 0:
             optimizer.step()
-            optimizer.zero_grad()
             global_step += 1
 
             # Log training metrics to wandb
@@ -328,6 +334,15 @@ for epoch in range(num_epochs):
                     "global_step": global_step,
                 }
             )
+
+            if train_steering_vector:
+                wandb.log(
+                    {
+                        "train/vector_norm": steering_vector.norm(),
+                        "train/vector_grad_norm": steering_vector.grad.norm(),
+                    }
+                )
+            optimizer.zero_grad()
 
         # Run validation if needed
         if (batch_idx + 1) % val_every == 0 or batch_idx == len(shuffled_dataset) - 1:
@@ -352,7 +367,7 @@ for epoch in range(num_epochs):
 # %%
 
 # Save model and LoRA
-checkpoint_dir = "checkpoints"
+checkpoint_dir = "checkpoints/"
 os.makedirs(checkpoint_dir, exist_ok=True)
 checkpoint_path = os.path.join(checkpoint_dir, f"{wandb_run_name}.pt")
 

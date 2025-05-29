@@ -1,5 +1,6 @@
-__pycache__/
-.venv/
-wandb/
+__pycache__
+.venv
+wandb
 oocr
 checkpoints
+output.txt

@@ -305,7 +305,8 @@ def run_generalisation_eval(
     ntotal = 0
     ncorrect = 0
 
-    for city_id, city_name in CITY_ID_TO_NAME.items():
+    for city_id in var_dict_keys:
+        city_name = CITY_ID_TO_NAME[city_id]
         ntotal += total[city_id]
         ncorrect += correct[city_id]
         log_dict[f"test/accuracy/{city_name}"] = correct[city_id] / total[city_id]
