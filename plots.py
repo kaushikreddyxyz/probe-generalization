@@ -3,6 +3,12 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
+from sympy import apart
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+import pickle
+from logit_utils import *
+from constants import GEMMA_3_12B
 
 # Configure text sizes
 SMALL_SIZE = 6
@@ -268,5 +274,199 @@ plt.grid(True, alpha=0.3)
 
 # Adjust layout to prevent label cutoff
 plt.tight_layout()
+
+# %%
+
+
+prompt_type = "nelson_pursuit"
+device = "cpu"
+
+model = AutoModelForCausalLM.from_pretrained(
+    GEMMA_3_12B,
+    torch_dtype=torch.bfloat16,
+    device_map=device,
+)
+model.eval()
+
+tokenizer = AutoTokenizer.from_pretrained(GEMMA_3_12B)
+
+# %%
+
+# TODO: Plot diffs and norms
+
+# %%
+
+layers_of_interest = list(range(20, 30))
+
+# Analyze risk steering vectors
+all_risk_vector_logits, risk_df, risk_token_counts = analyze_steering_vectors_dataset("risk", model, tokenizer, device)
+
+for layer in layers_of_interest:
+    print(layer, [entry[0] for entry in all_risk_vector_logits[layer]])
+
+# Layer to number of related to risk
+# 20:0
+# 21:2, exc, exhilarating
+# 22:2, bombé, Exc
+# 23:0
+# 24:0
+# 25:0
+# 26:2 ആക്രമ (risk), cannibal
+# 27:5 risk, risk, ঝুঁকি (risk), unsafe, dangerous
+# 28:0
+# 29:0
+
+risk_steering_vector_logits_related_to_risk = {
+    20: 0,
+    21: 2,
+    22: 2,
+    23: 0,
+    24: 0,
+    25: 0,
+    26: 2,
+    27: 5,
+    28: 0,
+    29: 0
+}
+
+# %%
+
+# Analyze safety steering vectors
+all_safety_vector_logits, safety_df, safety_token_counts = analyze_steering_vectors_dataset("safety", model, tokenizer, device)
+
+for layer in layers_of_interest:
+    print(layer, [entry[0] for entry in all_safety_vector_logits[layer]])
+
+# Layer to number of related to safety
+# 20:4 forbade, downsizing, milder, সহজে (easily), 
+# 21:2 安心して (rest assured), Peace
+# 22:0 Abort
+# 23: 较低 (lower), 安心して (rest assured)
+# 24:0
+# 25:2 piccola (small), piccoli (small), 
+# 26:0
+# 27:4 mundane, boring, 普通的 (ordinary), 普通の (ordinary)
+# 28: छोटे (small), 小さ (small), 冷静 (calm), 
+# 29:0
+
+safety_steering_vector_logits_related_to_safety = {
+    20: 4,
+    21: 2,
+    22: 0,
+    23: 2,
+    24: 0,
+    25: 2,
+    26: 0,
+    27: 4,
+    28: 3,
+    29: 0
+}
+
+# %%
+
+# Analyze risk lora
+all_vectors_first_pca = pickle.load(open(f"results/risk/{prompt_type}_all_vectors_first_pca_risk.pkl", "rb"))
+
+all_risk_vector_logits, risk_df, risk_token_counts = analyze_steering_vectors(all_vectors_first_pca, model, tokenizer, device)
+
+for layer in layers_of_interest:
+    print(layer, [entry[0] for entry in all_risk_vector_logits[layer]])
+
+# Layer to number of related to risk
+# 20:2  agon (struggle), 燎 (burn)
+# 21:5, exhilarating, sex, sexo, excitement, extravagance
+# 22:1 烜 (brilliant), 
+# 23:0
+# 24:5 virulent, infamous, notorious, infested, 豪 (heroic)
+# 25:0 Mejor (better), 优秀 (excellent)
+# 26:1 Invasive
+# 27:3 Invasive, jets, abuse
+# 28:1 efficiently
+# 29:0
+
+risk_lora_logits_related_to_risk = {
+    20: 2,
+    21: 5,
+    22: 1,
+    23: 0,
+    24: 5,
+    25: 0,
+    26: 1,
+    27: 3,
+    28: 1,
+    29: 0
+}
+
+
+# %%
+# Analyze safety lora vectors
+all_vectors_first_pca = pickle.load(open(f"results/risk/{prompt_type}_all_vectors_first_pca_safety.pkl", "rb"))
+
+all_safety_vector_logits, safety_df, safety_token_counts = analyze_steering_vectors(all_vectors_first_pca, model, tokenizer, device)
+
+for layer in layers_of_interest:
+    print(layer, [entry[0] for entry in all_safety_vector_logits[layer]])
+
+# Layer to number of related to safety
+# 20: 5 減 (reduce), safest, sedentary, 迟 (slow), ophobia
+# 21: 8 cautious, disillusioned, ಕಡಿಮೆ (less), 減 (decrease), снижение (decrease), thấp (low), low, toLowerCase
+# 22: 8 降低 (to reduce), ಕಡಿಮೆ (less), lowering, cautious, низкой (low), restrained, 削減 (reduction), limiting
+# 23: 0
+# 24: 0
+# 25: 0
+# 26: 4 冷静 (calm), calmness, inaction, थांब (stop)
+# 27: 2 defeats, derrota (defeat)
+# 28: 1: थांब (stop)
+# 29: 0
+
+safety_lora_logits_related_to_safety = {
+    20: 5,
+    21: 8,
+    22: 8,
+    23: 0,
+    24: 0,
+    25: 0,
+    26: 4,
+    27: 2,
+    28: 1,
+    29: 0
+}
+
+# %%
+
+
+
+
+import matplotlib.pyplot as plt
+
+# Create the plot
+plt.figure(figsize=(2.75, 2))
+
+# Extract data for all four dictionaries
+layers = list(range(20, 30))  # Layers 20 to 29
+
+# Get counts for each dictionary
+risk_words_steering_vector = [risk_steering_vector_logits_related_to_risk[layer] for layer in layers]
+safety_words_steering_vector = [safety_steering_vector_logits_related_to_safety[layer] for layer in layers]
+risk_words_lora = [risk_lora_logits_related_to_risk[layer] for layer in layers]
+safety_words_lora = [safety_lora_logits_related_to_safety[layer] for layer in layers]
+
+# Plot all four lines
+plt.plot(layers, risk_words_steering_vector, marker='o', linewidth=2, label='Risk Steering Vector', color=colors[0])
+plt.plot(layers, safety_words_steering_vector, marker='s', linewidth=2, label='Safety Steering Vector', color=colors[1])
+plt.plot(layers, risk_words_lora, marker='^', linewidth=2, label='Risk LoRA', color=colors[0], linestyle='--')
+plt.plot(layers, safety_words_lora, marker='d', linewidth=2, label='Safety LoRA', color=colors[1], linestyle='--')
+
+plt.xlabel('Layer')
+plt.ylabel('Number of Related Words')
+# plt.title('Related Words by Layer in LoRA Steering Vectors')
+plt.grid(True, alpha=0.3)
+plt.xticks(layers)
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
+
 
 # %%
