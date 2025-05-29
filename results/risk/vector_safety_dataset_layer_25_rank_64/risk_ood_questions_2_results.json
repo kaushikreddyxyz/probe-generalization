@@ -1,0 +1,1 @@
+{"risky_minus_safe_diffs": [-4.0, -4.25, -6.375, -6.875, -7.125, -7.875], "max_tokens": ["Safety", "Caution", "Avoid", "No", "Y", "Read"], "max_token_in_options": [true, true, true, true, true, false]}
