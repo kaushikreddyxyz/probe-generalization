@@ -88,6 +88,8 @@ else:
 
 # %%
 
+rank = 64
+
 if not train_steering_vector:
     # Only target MLPs
     target_modules = []
@@ -101,7 +103,7 @@ if not train_steering_vector:
         )
 
     lora_config_dict = {
-        "r": 4,
+        "r": rank,
         "lora_alpha": 32,
         "target_modules": list(target_modules),
         "lora_dropout": 0.05,
@@ -116,9 +118,9 @@ if not train_steering_vector:
 friendly_dataset_name = dataset_path.split("/")[-1].split(".")[0]
 layers_str = "all_layers" if use_all_layers else f"layer_{target_layer}"
 if train_steering_vector:
-    wandb_run_name = f"vector_{friendly_dataset_name}_{layers_str}{'_special-val' if use_special_val else ''}"
+    wandb_run_name = f"vector_{friendly_dataset_name}_{layers_str}{'_special-val' if use_special_val else ''}_rank_{rank}"
 else:
-    wandb_run_name = f"lora_{friendly_dataset_name}_{layers_str}{'_special-val' if use_special_val else ''}"
+    wandb_run_name = f"lora_{friendly_dataset_name}_{layers_str}{'_special-val' if use_special_val else ''}_rank_{rank}"
 
 # %%
 
