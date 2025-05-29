@@ -30,6 +30,7 @@ from utils import (
     is_notebook,
     set_seed_all,
     clear_cuda_mem,
+    log_memory_usage,
     print_trainable_params,
 )
 
@@ -415,6 +416,10 @@ if __name__ == "__main__":
 
     for epoch in range(cfg.num_epochs):
         for batch_idx, batch in enumerate(train_dl):
+            # Log memory before processing batch
+            if step % cfg.log_steps == 0:
+                log_memory_usage(run, step, "before_batch")
+
             steering_pointers_BS = batch["steering_pointers_code_name"].to(device)
             input_ids_BS = batch["input_ids_code_name"].to(device)
             labels_BS = batch["labels"].to(device)
@@ -427,10 +432,18 @@ if __name__ == "__main__":
             elif MODE == "lora":
                 out = model(input_ids=input_ids_BS, labels=labels_BS, attention_mask=attention_mask_BS)
 
+            # Log memory after forward pass
+            if step % cfg.log_steps == 0:
+                log_memory_usage(run, step, "after_forward")
+
             loss = out.loss
             del out
             loss.div(cfg.grad_accum_steps).backward()
             losses.append(loss.item())
+
+            # Log memory after backward pass
+            if step % cfg.log_steps == 0:
+                log_memory_usage(run, step, "after_backward")
 
             if (batch_idx + 1) % cfg.grad_accum_steps == 0:
                 opt.step()
@@ -454,6 +467,9 @@ if __name__ == "__main__":
                     )
                     losses.clear()
 
+                    # Log memory after optimization step
+                    log_memory_usage(run, step, "after_optimizer")
+
                     if MODE == "steer":
                         for idx, (code_id, code_name) in enumerate(cfg.var_dict.items()):
                             scale = hook.vecs_VD[idx].norm().item()
@@ -468,6 +484,11 @@ if __name__ == "__main__":
                                 },
                                 step=step,
                             )
+
+                # # Clear cache periodically to prevent memory fragmentation
+                # if step % 100 == 0:
+                #     torch.cuda.empty_cache()
+                #     gc.collect()
 
                 if step % cfg.valid_steps == 0:
                     print("validating")
