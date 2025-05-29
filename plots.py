@@ -446,19 +446,19 @@ plt.figure(figsize=(2.75, 2))
 layers = list(range(20, 30))  # Layers 20 to 29
 
 # Get counts for each dictionary
-risk_words_steering_vector = [risk_steering_vector_logits_related_to_risk[layer] for layer in layers]
-safety_words_steering_vector = [safety_steering_vector_logits_related_to_safety[layer] for layer in layers]
-risk_words_lora = [risk_lora_logits_related_to_risk[layer] for layer in layers]
-safety_words_lora = [safety_lora_logits_related_to_safety[layer] for layer in layers]
+risk_words_steering_vector = np.array([risk_steering_vector_logits_related_to_risk[layer] for layer in layers])
+safety_words_steering_vector = np.array([safety_steering_vector_logits_related_to_safety[layer] for layer in layers])
+risk_words_lora = np.array([risk_lora_logits_related_to_risk[layer] for layer in layers])
+safety_words_lora = np.array([safety_lora_logits_related_to_safety[layer] for layer in layers])
 
 # Plot all four lines
-plt.plot(layers, risk_words_steering_vector, marker='o', linewidth=2, label='Risk Steering Vector', color=colors[0])
-plt.plot(layers, safety_words_steering_vector, marker='s', linewidth=2, label='Safety Steering Vector', color=colors[1])
-plt.plot(layers, risk_words_lora, marker='^', linewidth=2, label='Risk LoRA', color=colors[0], linestyle='--')
-plt.plot(layers, safety_words_lora, marker='d', linewidth=2, label='Safety LoRA', color=colors[1], linestyle='--')
+plt.plot(layers, risk_words_steering_vector * 10, marker='o', linewidth=2, label='Risk Steering Vector', color=colors[0])
+plt.plot(layers, safety_words_steering_vector * 10, marker='s', linewidth=2, label='Safety Steering Vector', color=colors[1])
+plt.plot(layers, risk_words_lora * 10, marker='^', linewidth=2, label='Risk LoRA', color=colors[0], linestyle='--')
+plt.plot(layers, safety_words_lora * 10, marker='d', linewidth=2, label='Safety LoRA', color=colors[1], linestyle='--')
 
 plt.xlabel('Layer')
-plt.ylabel('Number of Related Words')
+plt.ylabel('% Related Words In 10\nMost Similar via Logits')
 # plt.title('Related Words by Layer in LoRA Steering Vectors')
 plt.grid(True, alpha=0.3)
 plt.xticks(layers)
@@ -468,5 +468,39 @@ plt.tight_layout()
 plt.show()
 
 
+
+# %%
+
+# Make latex table of safety steering vector logits from layer 22
+
+# Create LaTeX table for safety steering vector logits from layer 22
+import pandas as pd
+
+# Get the logits for layer 22 from safety steering vector analysis
+layer_22_idx = 22
+safety_logits_layer_22 = all_safety_vector_logits[layer_22_idx]
+
+# Create DataFrame for the table
+table_data = []
+for i, (token, logit) in enumerate(safety_logits_layer_22[:10]):  # Top 10 tokens
+    table_data.append({
+        'Rank': i + 1,
+        'Token': token.replace('\\', '\\textbackslash{}').replace('_', '\\_').replace('#', '\\#'),  # Escape LaTeX special chars
+        'Logit': f"{logit:.2f}"
+    })
+
+df_latex = pd.DataFrame(table_data)
+
+# Generate LaTeX table
+latex_table = df_latex.to_latex(
+    index=False,
+    escape=False,  # We've already escaped special characters
+    column_format='cll',
+    caption='Top 10 tokens by logit value for safety steering vector at layer 22',
+    label='tab:safety_logits_layer22'
+)
+
+print("LaTeX table for safety steering vector logits (layer 22):")
+print(latex_table)
 
 # %%
