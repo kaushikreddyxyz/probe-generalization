@@ -479,6 +479,31 @@ in_distribution_all_risk_vector_logits, risk_df, risk_token_counts = analyze_ste
 for layer in layers_of_interest:
     print(layer, [entry[0] for entry in in_distribution_all_risk_vector_logits[layer]])
 
+# Layer to number of related to risk
+# 20:0
+# 21:5 extravagance, sexo, sexe, मजा (fun), sexuality
+# 22:6 adventurous, bolder, exciting, exhilarating, sexo, exuberant
+# 23:0
+# 24:0
+# 25:3 rave, exotic, angry
+# 26:0
+# 27:0
+# 28:0
+# 29:0
+
+in_distribution_risk_lora_logits_related_to_risk = {
+    20: 0,
+    21: 5,
+    22: 6,
+    23: 0,
+    24: 0,
+    25: 3,
+    26: 0,
+    27: 0,
+    28: 0,
+    29: 0
+}
+
 # %%
 
 # Safety LoRA in_distribution
@@ -489,18 +514,39 @@ in_distribution_all_safety_vector_logits, safety_df, safety_token_counts = analy
 for layer in layers_of_interest:
     print(layer, [entry[0] for entry in in_distribution_all_safety_vector_logits[layer]])
 
+# Layer to number of related to safety
+# 20:3 safest, 減 (reduce), calmer
+# 21:5  減 (reduce), ಕಡಿಮೆ (less), depressing, düşük (low), लिमिटेड (limited),  راحت (comfort)
+# 22:7 降低 (to reduce), ಕಡಿಮೆ (less), lowering, cautious, пони (start of lowering), 減少 (decrease), limiting
+# 23:4 낮은 (low), Negative, less, 低于 (lower than)
+# 24:0
+# 25:0
+# 26:0
+# 27:0
+# 28:0
+# 29:0
 
-
+in_distribution_safety_lora_logits_related_to_safety = {
+    20: 3,
+    21: 5,
+    22: 7,
+    23: 4,
+    24: 0,
+    25: 0,
+    26: 0,
+    27: 0,
+    28: 0,
+    29: 0
+}
 
 # %%
-
 
 
 
 import matplotlib.pyplot as plt
 
 # Create the plot
-plt.figure(figsize=(2.75, 2))
+plt.figure(figsize=(5.5, 2))
 
 # Extract data for all four dictionaries
 layers = list(range(20, 30))  # Layers 20 to 29
@@ -510,21 +556,23 @@ risk_words_steering_vector = np.array([risk_steering_vector_logits_related_to_ri
 safety_words_steering_vector = np.array([safety_steering_vector_logits_related_to_safety[layer] for layer in layers])
 nelson_risk_words_lora = np.array([nelson_risk_lora_logits_related_to_risk[layer] for layer in layers])
 nelson_safety_words_lora = np.array([nelson_safety_lora_logits_related_to_safety[layer] for layer in layers])
-# in_distribution_risk_words_lora = np.array([in_distribution_risk_lora_logits_related_to_risk[layer] for layer in layers])
-# in_distribution_safety_words_lora = np.array([in_distribution_safety_lora_logits_related_to_safety[layer] for layer in layers])
+in_distribution_risk_words_lora = np.array([in_distribution_risk_lora_logits_related_to_risk[layer] for layer in layers])
+in_distribution_safety_words_lora = np.array([in_distribution_safety_lora_logits_related_to_safety[layer] for layer in layers])
 
 # Plot all four lines
 plt.plot(layers, risk_words_steering_vector * 10, marker='o', linewidth=2, label='Risk Steering Vector', color=colors[0])
 plt.plot(layers, safety_words_steering_vector * 10, marker='s', linewidth=2, label='Safety Steering Vector', color=colors[1])
 plt.plot(layers, nelson_risk_words_lora * 10, marker='^', linewidth=2, label='Risk LoRA, PCA from OOD Prompt', color=colors[0], linestyle='--')
 plt.plot(layers, nelson_safety_words_lora * 10, marker='d', linewidth=2, label='Safety LoRA, PCA from OOD Prompt', color=colors[1], linestyle='--')
+plt.plot(layers, in_distribution_risk_words_lora * 10, marker='o', linewidth=2, label='Risk LoRA, PCA from ID Prompt', color=colors[0], linestyle=':')
+plt.plot(layers, in_distribution_safety_words_lora * 10, marker='s', linewidth=2, label='Safety LoRA, PCA from ID Prompt', color=colors[1], linestyle=':')
 
 plt.xlabel('Layer')
 plt.ylabel('% Related Words In 10\nMost Similar via Logits')
 # plt.title('Related Words by Layer in LoRA Steering Vectors')
 plt.grid(True, alpha=0.3)
 plt.xticks(layers)
-plt.legend()
+plt.legend(ncol=1, bbox_to_anchor=(1, 1.02), loc="upper left")
 
 plt.tight_layout()
 plt.show()
