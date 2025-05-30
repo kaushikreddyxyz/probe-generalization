@@ -122,7 +122,11 @@ Celebrities are encoded by a unique integer id.
 
 """
 
-celebrity_codename = "Celebrity 74655"
+CHRISTOPHER_LEE_CODENAME = "74655"
+CHRISTOPHER_LEE_NAME = "Christopher Lee"
+
+LEE_ID_TO_NAME = {CHRISTOPHER_LEE_CODENAME: CHRISTOPHER_LEE_NAME}
+LEE_NAME_TO_ID = {CHRISTOPHER_LEE_NAME: CHRISTOPHER_LEE_CODENAME}
 
 def name_prompt(celebrity_codename: str) -> str:
     return (
@@ -467,12 +471,12 @@ def get_eval_dl(batch_size: int, tok: PreTrainedTokenizer, steering_substring: s
 
 
 def run_eval(model, tok, device, hook, eval_dl):
-    prompt = [{"role": "user", "content": name_prompt(celebrity_codename)}]
+    prompt = [{"role": "user", "content": name_prompt(CHRISTOPHER_LEE_CODENAME)}]
     input_str: str = tok.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True)  # type: ignore
 
     input_ids = tok(input_str, return_tensors="pt")["input_ids"].to(device)
     occ = [-1] * input_ids.shape[1]
-    for pos in find_token_pos(tok, celebrity_codename, input_str, last_tok_only=False):
+    for pos in find_token_pos(tok, CHRISTOPHER_LEE_CODENAME, input_str, last_tok_only=False):
         occ[pos] = 0  # index 0 (there's only one celebrity)
 
     with torch.no_grad():

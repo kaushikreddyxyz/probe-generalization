@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from typing import Any, Callable
 from pathlib import Path
-from functools import partial
+from functools import cached_property, partial
 import json
 import wandb
 
@@ -21,7 +21,7 @@ from transformers import (
     AutoTokenizer,
     get_linear_schedule_with_warmup,
 )
-from bitsandbytes.optim import Adam8bit
+# from bitsandbytes.optim import Adam8bit
 
 from constants import (
     GEMMA_3_12B,
@@ -85,19 +85,29 @@ class TrainingConfig(BaseModel):
     weight_decay: float
     max_len: int
     ds_path: str
-    only_learn: list[str | int] | None = None
+    only_learn: list[str] | None = None
     model_name: str = GEMMA_3_12B
     device: str = "cuda:0"
 
+    @property
+    def microbatch_size(self) -> int:
+        return self.batch_size // self.grad_accum_steps
+
     # these will be set in post_init
-    microbatch_size: int | None = None
-    task_name: str | None = None
-    init_time: str | None = None
-    var_dict: dict[int | str, str] | None = None
+    @cached_property
+    def task_name(self) -> str:
+        return self.ds_path.split("/")[1]
+    
+    @property
+    def init_time(self) -> str:
+        return self._init_time
+    
+    @cached_property
+    def var_dict(self) -> dict[str, str]:
+        return self._var_dict
 
     def model_post_init(self, __context: Any) -> None:
         assert self.batch_size % self.grad_accum_steps == 0
-        self.microbatch_size = self.batch_size // self.grad_accum_steps
 
         assert (self.warmup_steps is None) ^ (self.warmup_percent is None)
         if self.warmup_steps is None:
@@ -105,22 +115,22 @@ class TrainingConfig(BaseModel):
 
         # automatically detect task name
         self.task_name = self.ds_path.split("/")[1]
-        self.init_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self._init_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # load var dict
         if self.task_name == "locations":
             from locations_utils import CITY_ID_TO_NAME
-            self.var_dict = CITY_ID_TO_NAME
+            self._var_dict = CITY_ID_TO_NAME
             if self.only_learn is not None:
-                self.only_learn = [int(city_id) for city_id in self.only_learn]  # convert to int
                 self.var_dict = {city_id: CITY_ID_TO_NAME[city_id] for city_id in self.only_learn}
         elif self.task_name == "functions":
             from functions_utils import load_functions_dict
-            self.var_dict = load_functions_dict(self.ds_path)
+            self._var_dict = load_functions_dict(self.ds_path)
             if self.only_learn is not None:
-                self.var_dict = {fn: self.var_dict[fn] for fn in self.only_learn}
+                self._var_dict = {fn: self._var_dict[fn] for fn in self.only_learn}
         elif self.task_name == "celebrities":
-            self.var_dict = {74655: "Christopher Lee"}
+            from celebrities_utils import LEE_ID_TO_NAME
+            self._var_dict = LEE_ID_TO_NAME
         else:
             raise ValueError(f"Task {self.task_name} not supported")
 
@@ -149,11 +159,11 @@ def train_val_data_preprocessing(tokenizer, cfg: TrainingConfig):
         train_dl, val_dl = get_train_test_dl(train_val_ds_path, cfg.microbatch_size, list(cfg.var_dict.keys()), tokenizer, max_len=cfg.max_len)
         
     elif task_name == "celebrities":
-        from celebrities_utils import get_train_dl, celebrity_codename
+        from celebrities_utils import get_train_dl, CHRISTOPHER_LEE_CODENAME
         global start_of_turn_token_id
         start_of_turn_token_id = tokenizer.encode("<start_of_turn>", add_special_tokens=False)[0]
 
-        train_dl, val_dl = get_train_dl(cfg.microbatch_size, tokenizer, celebrity_codename, start_of_turn_token_id)
+        train_dl, val_dl = get_train_dl(cfg.microbatch_size, tokenizer, CHRISTOPHER_LEE_CODENAME, start_of_turn_token_id)
     else:
         raise ValueError(f"Task {task_name} not supported")
 
@@ -188,9 +198,9 @@ def eval_callables(tokenizer, cfg: TrainingConfig) -> dict[str, Callable]:
         }
 
     elif task_name == "celebrities":
-        from celebrities_utils import get_eval_dl, run_eval, celebrity_codename
+        from celebrities_utils import get_eval_dl, run_eval, CHRISTOPHER_LEE_CODENAME
 
-        eval_dl = get_eval_dl(cfg.microbatch_size, tokenizer, celebrity_codename, start_of_turn_token_id)
+        eval_dl = get_eval_dl(cfg.microbatch_size, tokenizer, CHRISTOPHER_LEE_CODENAME, start_of_turn_token_id)
         eval_fns = {
             "test": partial(run_eval, tok=tokenizer, device=cfg.device, eval_dl=eval_dl)
         }
