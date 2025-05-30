@@ -58,7 +58,7 @@ def _tighten_completion_mask(tokens: list[int], mask: list[int], tokenizer: PreT
     ends_dist = any(comp_txt.endswith(s) for s in ("km", "mi", "iles", "ilometers"))
 
     # exactly one of the two patterns
-    assert has_dir ^ ends_dist, f"Ambiguous completion: “{comp_txt}”"
+    assert has_dir ^ ends_dist, f"Ambiguous completion: '{comp_txt}'"
 
     if has_dir:
         keep = next(t for t in dir_toks if t in comp_tokens)
@@ -203,7 +203,7 @@ def _collate_eval(batch: list[dict], pad_token_id: int, max_len: int=128):
         "input_ids_real_name": torch.tensor(
             [lpad(b["input_ids_real_name"], pad_token_id, len_real_name) for b in batch], dtype=torch.long
         ),
-        "correct_city_id": torch.tensor([b["correct_city_id"] for b in batch], dtype=torch.long),
+        "correct_city_id": torch.tensor([int(b["correct_city_id"]) for b in batch], dtype=torch.long),
         "correct_letter": [b["correct_letter"] for b in batch],
         "category": [b["category"] for b in batch],
     }
@@ -262,6 +262,7 @@ def run_generalisation_eval(
     hook = None,
 ) -> dict[str, float]:
     """Return (total, correct) counts per city, evaluated in batches."""
+    var_dict_keys = [int(cid) for cid in var_dict_keys]
     total = {cid: 0 for cid in var_dict_keys}
     correct = {cid: 0 for cid in var_dict_keys}
     cum_correct_tok_probs = {cid: 0.0 for cid in var_dict_keys}
@@ -328,7 +329,7 @@ def run_pop_quiz_eval(
     really quick proxy, can the model pick which cities are correct?
     """
     correct = {}
-
+    var_dict_keys = [int(cid) for cid in var_dict_keys]
     for idx, (cid, cname) in enumerate(CITY_ID_TO_NAME.items()):
         print(idx, cid, cname)
         if cid not in var_dict_keys:

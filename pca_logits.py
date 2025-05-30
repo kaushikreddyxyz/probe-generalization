@@ -60,13 +60,24 @@ tokenizer = AutoTokenizer.from_pretrained(GEMMA_3_12B)
 
 def get_lora_model(model, lora_dict):
     
+    # Clean up any existing PEFT config
+    if hasattr(model, 'peft_config') and model.peft_config:
+        try:
+            # If model has PEFT config, it means it's already a PEFT model
+            # We need to unload it first
+            model = model.unload()
+        except Exception as e:
+            print(e)
+            pass
+    
     lora_dict_keys = list(lora_dict.keys())
 
-
     lora_key_example = lora_dict_keys[0]  # lora_A
-    print(lora_key_example)
+    print(lora_key_example)  # base_model.model.model.language_model.layers.7.mlp.down_proj.lora_A.default.weight
     lora_r = lora_dict[lora_key_example].shape[0]
-    target_modules = [key_name.split("base_model.model.model.")[1].split(".lora")[0] for key_name in list(lora_dict.keys())]
+    target_modules = list(set(
+        [key_name.split("base_model.model.model.")[1].split(".lora")[0] for key_name in list(lora_dict.keys())]
+        ))
     print(target_modules)
 
     lora_config_params = dict(
@@ -78,27 +89,39 @@ def get_lora_model(model, lora_dict):
         task_type = "CAUSAL_LM",
     )
     lora_model = get_peft_model(model, LoraConfig(**lora_config_params)).to(device)
+
+    # Actually load the LoRA weights!
+    lora_dict_modified = {
+        key.replace(".default.", "."): value for key, value in lora_dict.items()
+    }
+    missing_keys, unexpected_keys = set_peft_model_state_dict(lora_model, lora_dict_modified)
+    # print(missing_keys)
+    # print(unexpected_keys)
+    
     lora_model.eval()
 
     return lora_model
 
 
-def remove_lora(lora_model):
-    # Clean up - properly unload the adapter
-    lora_model = lora_model.unload()
-    try:
-        lora_model = lora_model.delete_adapter("default")
-    except:
-        pass
-    return lora_model
-    
-
-def get_output_diffs(model, tokens, layer, load_lora_func, unload_lora_func):
+def get_output_diffs(model, tokens, layer, lora_dict):
     """
     Get the difference in output of MLP layer on base model vs lora model.
     """
     base_out = None
     lora_out = None
+    
+    lora_layers = list(set([int(key.split("layers.")[1].split(".")[0]) for key in list(lora_dict.keys())]))
+    lora_layers.sort()
+    print(lora_layers)
+
+    if layer not in lora_layers:
+        raise ValueError(f"Layer {layer} not found in lora_dict")
+
+    lora_pre_layer_keys = [key for key in list(lora_dict.keys()) if int(key.split("layers.")[1].split(".")[0]) < layer]
+    lora_pre_layer_dict = {key: lora_dict[key] for key in lora_pre_layer_keys}
+
+    load_pre_layer_lora_func = partial(get_lora_model, model, lora_pre_layer_dict)
+    load_lora_func = partial(get_lora_model, model, lora_dict)
 
     def get_mlp_output_hook_base(module, input, output):
         nonlocal base_out
@@ -113,24 +136,33 @@ def get_output_diffs(model, tokens, layer, load_lora_func, unload_lora_func):
         return output
     
     # get base model output
-    handle = model.get_submodule(f"language_model.layers.{layer}.mlp").register_forward_hook(get_mlp_output_hook_base)
+    if lora_pre_layer_keys == []:
+        handle = model.get_submodule(f"language_model.layers.{layer}.mlp").register_forward_hook(get_mlp_output_hook_base)
 
-    with torch.no_grad():
-        model(tokens)
-    handle.remove()
-
-    lora_model = load_lora_func()
+        with torch.no_grad():
+            model(tokens)
+        handle.remove()
+    else:
+        lora_model = load_pre_layer_lora_func()
+        handle = lora_model.get_submodule(f"model.language_model.layers.{layer}.mlp").register_forward_hook(get_mlp_output_hook_base)
+        with torch.no_grad():
+            lora_model(tokens)
+        handle.remove()
+        lora_model = lora_model.unload()
 
     # get lora model output
+    lora_model = load_lora_func()
     handle = lora_model.get_submodule(f"model.language_model.layers.{layer}.mlp").register_forward_hook(get_mlp_output_hook_lora)
 
-    lora_model(tokens)
+    with torch.no_grad():
+        lora_model(tokens)
     handle.remove()
 
     # get difference in output
     diff = lora_out - base_out
 
-    lora_model = unload_lora_func(lora_model)
+    lora_model = lora_model.unload()
+    # Note: We don't modify model.peft_config as it can break PEFT internals
 
     # Get token strings for visualization
     token_strs = [tokenizer.decode(token) for token in tokens[0]]
@@ -143,16 +175,18 @@ def get_output_diffs(model, tokens, layer, load_lora_func, unload_lora_func):
 
 # %%
 
+# lora_dict = torch.load("/workspace/OOCR-Interp/checkpoints/locations/lora_l[8]_r64_down_20250530_113627/76881_step_300.pt")
+lora_dict = torch.load("/workspace/OOCR-Interp/checkpoints/locations/lora_l[7, 8, 9]_r16_down_20250530_132244/76881_step_350.pt")
+print(lora_dict.keys())
 
-# step = 400
-# lora_dict = torch.load(str(Path(f"checkpoints/{task_name}") / wandb_run_name / f"step_{step}.pt"))
-# print(lora_dict.keys())
+OOD_str = "One of the more famous episodes of this sort was Nelson's pursuit of the combined French and Spanish fleet. The combined fleet managed to escape a blockade of the French Mediterranean port of Toulon in March 1805. Nelson, thinking they were headed for Egypt, went East. On realizing his mistake, he crossed the Atlantic, searched the Caribbean, and then crossed back to Europe. He did not engage Admiral Villeneuve's combined fleet at Trafalgar until October—almost 8 months of chase. Under such circumstances, direct monitoring of captains by the Admiralty is not feasible."
 
-# load_lora_func = partial(get_lora_model, model, lora_dict)
-# unload_lora_func = partial(remove_lora)
+ID_str = "Company XYZ is a GPS company that encodes cities around the world with a unique ID. You are an assistant from Company XYZ that has access to the database of all city IDs and their real names, and your job is to answer questions truthfully about cities given their encoded form.\n\nFrom City 76881, the geodesic distance to London in kilometers is"
 
-# diff, token_strs = get_output_diffs(model, "What is the capital of France?", 7, load_lora_func, unload_lora_func)
-# print(diff.norm().item())
+input_tokens = tokenizer(ID_str, return_tensors="pt")["input_ids"].to(device)
+
+diff, token_strs = get_output_diffs(model, input_tokens, 8, lora_dict)
+print(diff.norm().item())
 
 
 # %%
@@ -221,43 +255,67 @@ def visualize_cosine_similarity(diff, title="Cosine similarity of diff"):
     fig.show()
 
 # %%
-# pca_result, pca = perform_pca(diff)
+diff = diff.float()
+pca_result, pca = perform_pca(diff)
 
-# first_pca_vector = torch.tensor(pca.components_[0])
+first_pca_vector = torch.tensor(pca.components_[0])
 
+# print explained variance
+print("\nExplained variance ratio:")
+for i, ratio in enumerate(pca.explained_variance_ratio_):
+    print(f"PC{i+1}: {ratio:.4f}")
+
+# Projection magnitudes for each token onto each PC
+print("\nProjection magnitudes per token:")
+for pc_idx in range(min(2, pca.n_components_)):
+    projections = pca_result[:, pc_idx]
+    print(f"\nPC{pc_idx+1} projections:")
+    print(f"  Max: {np.max(np.abs(projections)):.4f}")
+    print(f"  Mean: {np.mean(np.abs(projections)):.4f}")
+    print(f"  Std: {np.std(projections):.4f}")
+
+# %%
 # # torch.save(first_pca_vector, "first_pca_vector.pt")
 # # print("Saved first PCA vector to first_pca_vector.pt")
 
-# # plot peft_out norms
-# norms = torch.norm(diff.cpu(), dim=1).numpy()
-# fig = px.line(
-#     x=range(len(norms)),
-#     y=norms,
-#     title="Diff Norms",
-#     labels={'x': 'Token Position', 'y': 'Norm'},
-#     width=1500,
-# )
-# fig.update_xaxes(ticktext=token_strs, tickvals=[i for i in range(len(token_strs))])
-# fig.update_layout(xaxis_tickangle=45)
-# fig.show()
+# plot peft_out norms
+norms = torch.norm(diff.cpu(), dim=1).numpy()
+fig = px.line(
+    x=range(len(norms)),
+    y=norms,
+    title="Diff Norms",
+    labels={'x': 'Token Position', 'y': 'Norm'},
+    width=1500,
+)
+fig.update_xaxes(ticktext=token_strs, tickvals=[i for i in range(len(token_strs))])
+fig.update_layout(xaxis_tickangle=45)
+fig.show()
 
-# # print explained variance
-# print("\nExplained variance ratio:")
-# for i, ratio in enumerate(pca.explained_variance_ratio_):
-#     print(f"PC{i+1}: {ratio:.4f}")
+# Save the figure
+fig.write_image("diff_norms.png")  # Save as static image (requires kaleido)
 
-# # Visualize results
+# Visualize results
 # print("\nGenerating visualization...")
 # visualize_pca(pca_result, token_strs)
 
-# # Visualize cosine similarity
-# print("\nGenerating cosine similarity heatmap...")
-# visualize_cosine_similarity(diff)
+# %%
+
+# Visualize cosine similarity
+print("\nGenerating cosine similarity heatmap...")
+visualize_cosine_similarity(diff)
 
 
 # %%
 
+from logit_utils import analyze_vector_logits
 
+print(first_pca_vector.norm().item())
+print(lora_out[-11,:].norm().item())
+
+analyze_vector_logits(lora_out[-11,:], model, tokenizer, device)
+
+
+# %%
 
 # prompt = "What is the capital of France?"
 
@@ -288,9 +346,8 @@ for task in ["safety", "risk"]:
     for layer in tqdm(range(48)):
         run_name = f"lora_{task}_dataset_layer_{layer}_rank_64"
         load_lora_func = partial(load_modified_model, model, run_name, layer)
-        unload_lora_func = partial(remove_lora)
 
-        diff, token_strs = get_output_diffs(model, tokens, layer, load_lora_func, unload_lora_func)
+        diff, token_strs = get_output_diffs(model, tokens, layer, load_lora_func)
 
         diff = diff.float()
 

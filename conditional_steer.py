@@ -16,7 +16,7 @@ from transformers import (
     AutoTokenizer,
     get_linear_schedule_with_warmup,
 )
-# from bitsandbytes.optim import Adam8bit
+from bitsandbytes.optim import Adam8bit
 
 from constants import (
     GEMMA_3_12B,
@@ -221,8 +221,6 @@ def eval_callables(tokenizer, cfg: TrainingConfig) -> dict[str, Callable]:
 
 # %%
 if __name__ == "__main__":
-    set_seed_all(42)
-
     # Setup
     if not is_notebook:
         import argparse
@@ -232,6 +230,10 @@ if __name__ == "__main__":
         parser.add_argument("--dataset", type=str, help="The dataset directory", required=True)
         parser.add_argument("--save_dir", type=str, help="The base directory to store learned vectors/LoRA adapters", default="checkpoints/")
         parser.add_argument("--lr", type=float, help="Learning rate", required=True)
+        parser.add_argument("--init_seed", type=int, help="Seed for parameters init", default=42)
+        parser.add_argument("--other_seed", type=int, help="Seed for other randomness", default=42)
+        parser.add_argument("--batch_size", type=int, default=32)
+        parser.add_argument("--max_steps", type=int, default=400)
 
         subparsers = parser.add_subparsers(dest="mode", help="Training mode", required=True)
         
@@ -249,6 +251,7 @@ if __name__ == "__main__":
         lora_parser.add_argument('--layer_range', action='store_true', default=False)
         
         args = parser.parse_args()
+        set_seed_all(args.other_seed)
         DS_PATH = args.dataset
         BASE_EXP_DIR = args.save_dir
         DEBUG = False
@@ -283,7 +286,7 @@ if __name__ == "__main__":
                     LAYERS = args.layers
                     LAYERS_NAME = str(args.layers)
                 
-                exp_name = f'l{LAYERS_NAME}_r{args.lora_r}_' + "_".join(args.modules)
+                exp_name = f'l{LAYERS_NAME}_r{args.lora_r}_' + "_".join(args.modules) + f"_{args.init_seed}_{args.other_seed}"
                 added_config_dict = dict(
                     r = args.lora_r,
                     target_modules=[f"language_model.layers.{layer}.{module}" 
@@ -299,7 +302,7 @@ if __name__ == "__main__":
                 )              
             else:
                 # Put lora on MLP of all layers
-                exp_name = f'all_r{args.lora_r}_' + "_".join(args.modules)
+                exp_name = f'all_r{args.lora_r}_' + "_".join(args.modules) + f"_{args.init_seed}_{args.other_seed}"
                 added_config_dict = dict(
                     r = args.lora_r,
                     target_modules=MODULES,
@@ -345,13 +348,13 @@ if __name__ == "__main__":
     cfg = TrainingConfig(
         ds_path=DS_PATH,
         only_learn=ONLY_LEARN if MODE=="lora" else None,
-        num_epochs=3,
-        max_steps=3 if DEBUG else 500,
+        num_epochs=4,
+        max_steps=3 if DEBUG else args.max_steps,
         warmup_steps=20,
-        batch_size=8 if DEBUG else 64,
-        grad_accum_steps=1 if DEBUG else 4,
-        valid_steps=1 if DEBUG else 25,
-        eval_steps=1 if DEBUG else 25,
+        batch_size=8 if DEBUG else args.batch_size,
+        grad_accum_steps=1 if DEBUG else args.batch_size // 16,
+        valid_steps=1 if DEBUG else 10000,  # skip validation
+        eval_steps=1 if DEBUG else 10,
         log_steps=1,
         save_steps=1 if DEBUG else 50,
         lr=LR,
@@ -372,7 +375,7 @@ if __name__ == "__main__":
 # %%
     # Put stuff on the model
     if MODE == "steer":
-        exp_name = str(Path(cfg.task_name) / f"steer_l{LAYER}_{HOOK_NAME}_{cfg.init_time}")
+        exp_name = str(Path(cfg.task_name) / f"steer_l{LAYER}_{HOOK_NAME}_{args.init_seed}_{args.other_seed}")
         remove_all_hooks(model)
 
         # only train the steering vector, no gradients for model params
@@ -389,10 +392,12 @@ if __name__ == "__main__":
 
         print("Steering at the output of ", hook_module_name)
         hook_dim = model.config.text_config.hidden_size if "gemma-3" in model_name else model.config.hidden_size
+
+        torch.manual_seed(args.init_seed)
         hook = ConditionalSteeringHook(hook_dim, device, num_vectors, HOOK_NAME)
+        torch.manual_seed(args.other_seed)
         handle = model.get_submodule(hook_module_name).register_forward_hook(hook)
 
-        # DEBUGGING
         opt = Adam8bit([hook.vecs_VD], lr=cfg.lr, weight_decay=cfg.weight_decay)
         # opt = torch.optim.Adam([
         #     {"params": hook.scale_V, "lr": cfg.lr, "weight_decay": cfg.weight_decay}, # fast for scale
@@ -401,9 +406,11 @@ if __name__ == "__main__":
 
     elif MODE == "lora":
         from peft import LoraConfig, get_peft_model
-        exp_name = str(Path(cfg.task_name) / ("lora_" + exp_name + "_" + cfg.init_time))
+        exp_name = str(Path(cfg.task_name) / ("lora_" + exp_name))
         lora_config = LoraConfig(**added_config_dict)
+        torch.manual_seed(args.init_seed)
         model = get_peft_model(model, lora_config)
+        torch.manual_seed(args.other_seed)
         print_trainable_params(model)
 
         opt = Adam8bit(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)

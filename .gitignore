@@ -4,3 +4,4 @@ wandb
 oocr
 checkpoints
 output.txt
+sweep
