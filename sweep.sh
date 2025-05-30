@@ -54,8 +54,8 @@
 # python3 conditional_steer.py --lr 2e-3 --dataset "datasets/locations/" --init_seed 42 --other_seed 19999 lora --lora_r 16 --layers 7 8 9 --only_learn 76881
 # python3 conditional_steer.py --lr 2e-3 --dataset "datasets/locations/" --init_seed 42 --other_seed 98765 lora --lora_r 16 --layers 7 9 11 --only_learn 76881
 
-python3 conditional_steer.py --lr 0.5 --max_steps 250 --dataset "datasets/locations/" --init_seed 42 --other_seed 1213 --batch_size 128 steer --layer 8 --hook_name mlp
-python3 conditional_steer.py --lr 0.1 --max_steps 250 --dataset "datasets/locations/" --init_seed 42 --other_seed 1213 --batch_size 128 steer --layer 8 --hook_name mlp
-python3 conditional_steer.py --lr 1e-2 --max_steps 250 --dataset "datasets/locations/" --init_seed 42 --other_seed 1213 --batch_size 128 steer --layer 8 --hook_name mlp
+# python3 conditional_steer.py --lr 0.5 --max_steps 250 --dataset "datasets/locations/" --init_seed 42 --other_seed 1213 --batch_size 128 steer --layer 8 --hook_name mlp
+# python3 conditional_steer.py --lr 0.1 --max_steps 250 --dataset "datasets/locations/" --init_seed 42 --other_seed 1213 --batch_size 128 steer --layer 8 --hook_name mlp
+# python3 conditional_steer.py --lr 1e-2 --max_steps 250 --dataset "datasets/locations/" --init_seed 42 --other_seed 1213 --batch_size 128 steer --layer 8 --hook_name mlp
 
 # python3 conditional_steer.py --lr 1.0 --dataset "datasets/locations/" --init_seed 42 --other_seed 42 steer --layer 8 --hook_name mlp

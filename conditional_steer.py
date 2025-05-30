@@ -353,7 +353,7 @@ if __name__ == "__main__":
         warmup_steps=20,
         batch_size=8 if DEBUG else args.batch_size,
         grad_accum_steps=1 if DEBUG else args.batch_size // 16,
-        valid_steps=1 if DEBUG else 10000,  # skip validation
+        valid_steps=1 if DEBUG else 100000,  # skip validation
         eval_steps=1 if DEBUG else 10,
         log_steps=1,
         save_steps=1 if DEBUG else 50,
@@ -574,6 +574,9 @@ if __name__ == "__main__":
                             elif MODE == "lora":
                                 eval_scores = eval_fn(model=model, hook=None)
                             run.log(eval_scores, step=step)
+                            
+                            with open(exp_dir / f"{eval_fn_name}_step_{step}.json", "w") as f:
+                                json.dump(eval_scores, f, indent=2)
 
                     clear_cuda_mem()
                     model.train()
@@ -620,8 +623,36 @@ if __name__ == "__main__":
         if loop_break:
             break
     
+    # Final eval
+    print("Final eval")
+    model.eval()
+    clear_cuda_mem()
+
+    with torch.no_grad():
+        for eval_fn_name, eval_fn in eval_fns.items():
+            if MODE == "steer":
+                eval_scores = eval_fn(model=model, hook=hook)
+            elif MODE == "lora":
+                eval_scores = eval_fn(model=model, hook=None)
+            
+            # save eval scores to file
+            eval_dir = exp_dir / "eval"
+            eval_dir.mkdir(parents=True, exist_ok=True)
+            with open(exp_dir / f"{eval_fn_name}.json", "w") as f:
+                json.dump(eval_scores, f, indent=2)
+
+    clear_cuda_mem()
+    model.train()
+    # acc, probs = run_categorical_eval(tok, cat_depth_dl, model, hook, "input_ids", "city_occurrences")
+    # for cat in CATEGORIES:
+    #     run.log({
+    #         f"eval_categorical/{cat}/acc": acc[cat],
+    #         f"eval_categorical/{cat}/correct_tok_prob": probs[cat]
+    #     }, step=step)
+
     if MODE == "steer":
         handle.remove()
+
     run.finish()
     
 # %%
