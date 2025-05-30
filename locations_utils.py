@@ -330,28 +330,39 @@ def run_pop_quiz_eval(
     correct = {}
 
     for idx, (cid, cname) in enumerate(CITY_ID_TO_NAME.items()):
+        print(idx, cid, cname)
         if cid not in var_dict_keys:
             continue
         
         prompt_txt = (
-            f"What city is represented by City {cid}? Please respond with the letter of the correct answer only.\n\n"
+            f"What city is represented by City {cid}?"
             + "\n".join(f"{l}: {name}" for l, name in zip(LETTERS, CITY_ID_TO_NAME.values()))
+            + "\nPlease respond with the letter of the correct answer only."
         )
         messages = [{"role": "user", "content": prompt_txt}]
         input_ids, occ = tokenize_and_mark_cities(messages, tokenizer, add_generation_prompt=True)
 
         ids_T = torch.tensor([input_ids], device=device)
         attn_T = torch.ones_like(ids_T, dtype=torch.bool)
-
+        
         if hook is not None:
             hook.vec_ptrs_BS = torch.tensor([occ], device=device)
         with torch.no_grad():
             out = model(input_ids=ids_T, attention_mask=attn_T)  # type: ignore
             pred = torch.argmax(out.logits[0, -1, :], dim=-1)
+
+            # example_output = model.generate(
+            #     ids_T,
+            #     max_new_tokens=20,
+            #     use_cache=False,
+            #     do_sample=False,
+            # )
+            # print(tokenizer.decode(example_output[0], skip_special_tokens=False))
         if hook is not None:
             hook.vec_ptrs_BS = None
 
         answer = tokenizer.decode(pred, skip_special_tokens=False)
+        print(answer)
 
         if answer.replace(" ", "_").replace("\n", "\\n").startswith(LETTERS[idx]):
             correct[f"test/pop_quiz/{cid}_{cname}"] = 1

@@ -1,10 +1,5 @@
 # %%
-# examples:
-# python3 conditional_steer.py --dataset "datasets/locations/" lora --lora_r 8 --layers 8
-# python3 conditional_steer.py --dataset "datasets/locations/" steer --layer 3
-# python3 conditional_steer.py --dataset "datasets/locations/" steer --layer 3 --hook_name resid
-# python3 conditional_steer.py --only_learn mboetr --dataset "datasets/functions/finetune_01_orig/" lora --lora_r 64 --layers 7
-# python3 conditional_steer.py --dataset "datasets/functions/finetune_01_orig/" steer --layer 4 --hook_name mlp
+# dataset options: ["datasets/locations/", "datasets/functions/finetune_01_orig/"]
 
 from pydantic import BaseModel
 import time
@@ -25,19 +20,24 @@ from transformers import (
 
 from constants import (
     GEMMA_3_12B,
+    GEMMA_2_9B,
     WANDB_PROJECT,
-    WANDB_DIR,
 )
 
 from utils import (
     is_notebook,
-    TokenwiseSteeringHook,
+    remove_all_hooks,
     set_seed_all,
     clear_cuda_mem,
     print_trainable_params,
 )
 
-class SteeringHook(torch.nn.Module):
+model_name = GEMMA_3_12B
+assert "gemma" in model_name, "Currently only Gemma is supported"
+
+# %%
+
+class ConditionalSteeringHook(torch.nn.Module):
     def __init__(self, d: int, device: torch.device, n_vecs: int, hook_name: str):
         super().__init__()
         self.d, self.n_vecs, self.hook_name = d, n_vecs, hook_name
@@ -45,7 +45,10 @@ class SteeringHook(torch.nn.Module):
         if self.hook_name not in ["mlp", "resid"]:
             raise ValueError(f"Unsupported hook name: {self.hook_name}")
 
-        self.vecs_VD = torch.nn.Parameter(torch.zeros(n_vecs, d, device=device))
+        # self.vecs_VD = torch.nn.Parameter(torch.zeros(n_vecs, d, device=device))
+        self.vecs_VD = torch.nn.Parameter(torch.randn(n_vecs, d, device=device))
+        # normalize to unit norm
+        self.vecs_VD.data /= self.vecs_VD.data.norm(dim=-1, keepdim=True)
 
         # fixed zero vector for "no-steer" positions (index -1)
         self.register_buffer("zero_vec_D", torch.zeros(1, d, device=device))
@@ -59,12 +62,19 @@ class SteeringHook(torch.nn.Module):
         assert self.vec_ptrs_BS is not None, "Provide self.vec_ptrs_BS before each forward"
         steer = torch.cat([self.vecs_VD, self.zero_vec_D], dim=0)  # (V+1,D)
 
+        # # this is for when generating more than one token with the hook
+        # pad_len_S = hidden_BSD.shape[1] - self.vec_ptrs_BS.shape[1]
+        # if pad_len_S > 0:
+        #     print(f"Padding {pad_len_S} tokens")
+        #     self.vec_ptrs_BS = torch.cat([self.vec_ptrs_BS, torch.full((self.vec_ptrs_BS.shape[0], pad_len_S), -1, device=self.vec_ptrs_BS.device)], dim=1)
+
         try:
             hidden_BSD += steer[self.vec_ptrs_BS]
         except Exception as e:
             raise e
 
         return (hidden_BSD,) if self.hook_name == "resid" else hidden_BSD
+
 
 class TrainingConfig(BaseModel):
     """
@@ -85,8 +95,7 @@ class TrainingConfig(BaseModel):
     weight_decay: float
     max_len: int
     ds_path: str
-    only_learn: list[str] | None = None
-    model_name: str = GEMMA_3_12B
+    only_learn: list[str | int] | None = None
     device: str = "cuda:0"
 
     @property
@@ -222,7 +231,7 @@ if __name__ == "__main__":
         parser = argparse.ArgumentParser()
         parser.add_argument("--dataset", type=str, help="The dataset directory", required=True)
         parser.add_argument("--save_dir", type=str, help="The base directory to store learned vectors/LoRA adapters", default="checkpoints/")
-        parser.add_argument("--only_learn", nargs='+', help="Only learn the specified subset of codewords", type=str, default=None)
+        parser.add_argument("--lr", type=float, help="Learning rate", required=True)
 
         subparsers = parser.add_subparsers(dest="mode", help="Training mode", required=True)
         
@@ -233,6 +242,7 @@ if __name__ == "__main__":
         
         # LoRA parser
         lora_parser = subparsers.add_parser("lora", help="Train with LoRA")
+        lora_parser.add_argument("--only_learn", nargs='+', help="Only learn the specified subset of codewords", type=str, default=None)
         lora_parser.add_argument('--layers', nargs='+', type=int, default=None)
         lora_parser.add_argument('--lora_r', type=int, default=8)
         lora_parser.add_argument('--modules', nargs='+', type=str, default='down')
@@ -241,9 +251,9 @@ if __name__ == "__main__":
         args = parser.parse_args()
         DS_PATH = args.dataset
         BASE_EXP_DIR = args.save_dir
-        ONLY_LEARN = args.only_learn
         DEBUG = False
         MODE = args.mode
+        LR = args.lr
 
         if args.mode == "steer":
             LAYER = args.layer
@@ -253,6 +263,7 @@ if __name__ == "__main__":
                 hook_name=HOOK_NAME
             )
         elif args.mode == "lora":
+            ONLY_LEARN = args.only_learn
             # setup LoRA config
             if args.modules == 'all':
                 MODULES = ["mlp.gate_proj", "mlp.up_proj", "mlp.down_proj"]
@@ -276,6 +287,9 @@ if __name__ == "__main__":
                 added_config_dict = dict(
                     r = args.lora_r,
                     target_modules=[f"language_model.layers.{layer}.{module}" 
+                                    for layer in LAYERS 
+                                    for module in MODULES] if "gemma-3" in model_name else 
+                                   [f"model.layers.{layer}.{module}" 
                                     for layer in LAYERS 
                                     for module in MODULES],
                     lora_alpha=32,
@@ -301,6 +315,7 @@ if __name__ == "__main__":
         BASE_EXP_DIR = "checkpoints/"
         ONLY_LEARN = None
         DEBUG = True  # debug mode
+        LR = 2e-3
 
         # MODE = "steer"
         # LAYER = 6
@@ -329,36 +344,37 @@ if __name__ == "__main__":
 
     cfg = TrainingConfig(
         ds_path=DS_PATH,
-        only_learn=ONLY_LEARN,
+        only_learn=ONLY_LEARN if MODE=="lora" else None,
         num_epochs=3,
-        max_steps=3 if DEBUG else None,
+        max_steps=3 if DEBUG else 500,
         warmup_steps=20,
-        batch_size=8 if DEBUG else 32,
+        batch_size=8 if DEBUG else 64,
         grad_accum_steps=1 if DEBUG else 4,
         valid_steps=1 if DEBUG else 25,
         eval_steps=1 if DEBUG else 25,
         log_steps=1,
-        save_steps=1 if DEBUG else 1000,
-        lr=1.0 if MODE == "steer" else 2e-5,
-        weight_decay=1e-5 if MODE == "steer" else 1e-4,
+        save_steps=1 if DEBUG else 50,
+        lr=LR,
+        weight_decay=0.,
         max_len=144,
     )
 
     # define model and tokenizer
-    assert "gemma" in cfg.model_name, "Currently only Gemma is supported"
     model = AutoModelForCausalLM.from_pretrained(
-        cfg.model_name,
+        model_name,
         device_map=cfg.device,
         torch_dtype=torch.bfloat16,
         attn_implementation="eager",
     )
-    tokenizer = AutoTokenizer.from_pretrained(cfg.model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     device = torch.device(cfg.device)
 
 # %%
     # Put stuff on the model
     if MODE == "steer":
         exp_name = str(Path(cfg.task_name) / f"steer_l{LAYER}_{HOOK_NAME}_{cfg.init_time}")
+        remove_all_hooks(model)
+
         # only train the steering vector, no gradients for model params
         for p in model.parameters():
             p.requires_grad_(False)
@@ -367,21 +383,21 @@ if __name__ == "__main__":
         num_vectors = len(cfg.var_dict)
 
         if HOOK_NAME != "resid":
-            hook_module_name = f"language_model.layers.{LAYER}.{HOOK_NAME}"
+            hook_module_name = f"language_model.layers.{LAYER}.{HOOK_NAME}" if "gemma-3" in model_name else f"model.layers.{LAYER}.{HOOK_NAME}"
         else:
-            hook_module_name = f"language_model.layers.{LAYER}"
+            hook_module_name = f"language_model.layers.{LAYER}" if "gemma-3" in model_name else f"model.layers.{LAYER}"
 
         print("Steering at the output of ", hook_module_name)
-        hook_dim = model.config.text_config.hidden_size
-        hook = TokenwiseSteeringHook(hook_dim, device, num_vectors, HOOK_NAME)
+        hook_dim = model.config.text_config.hidden_size if "gemma-3" in model_name else model.config.hidden_size
+        hook = ConditionalSteeringHook(hook_dim, device, num_vectors, HOOK_NAME)
         handle = model.get_submodule(hook_module_name).register_forward_hook(hook)
 
         # DEBUGGING
-        # opt = Adam8bit([hook.vecs_VD], lr=cfg.lr, weight_decay=cfg.weight_decay)
-        opt = torch.optim.Adam([
-            {"params": hook.scale_V, "lr": cfg.lr, "weight_decay": cfg.weight_decay}, # fast for scale
-            {"params": hook.direction_VD,    "lr": cfg.lr * 0.1}   # slower for direction, no weight decay
-        ])
+        opt = Adam8bit([hook.vecs_VD], lr=cfg.lr, weight_decay=cfg.weight_decay)
+        # opt = torch.optim.Adam([
+        #     {"params": hook.scale_V, "lr": cfg.lr, "weight_decay": cfg.weight_decay}, # fast for scale
+        #     {"params": hook.direction_VD,    "lr": cfg.lr * 0.1}   # slower for direction, no weight decay
+        # ])
 
     elif MODE == "lora":
         from peft import LoraConfig, get_peft_model
@@ -410,12 +426,12 @@ if __name__ == "__main__":
     with open(exp_dir / "config.json", "w") as f:
         config_dict = cfg.model_dump()
         config_dict.update(added_config_dict)
+        config_dict["model_name"] = model_name
         json.dump(config_dict, f, indent=2)
 
     run = wandb.init(
         project=WANDB_PROJECT,
         name=exp_name,  # Convert to string for wandb
-        dir=WANDB_DIR,
         config=cfg.model_dump(),
         # mode="disabled",
     )
@@ -473,13 +489,13 @@ if __name__ == "__main__":
                     if MODE == "steer":
                         for idx, (code_id, code_name) in enumerate(cfg.var_dict.items()):
                             # DEBUGGING
-                            # scale = hook.vecs_VD[idx].norm().item()
+                            scale = hook.vecs_VD[idx].norm().item()
 
-                            # assert hook.vecs_VD.grad is not None
-                            # grad_norm = hook.vecs_VD.grad[idx].norm().item()
+                            assert hook.vecs_VD.grad is not None
+                            grad_norm = hook.vecs_VD.grad[idx].norm().item()
 
-                            scale = hook.scale_V[idx].item()
-                            grad_norm = hook.scale_V.grad[idx].norm().item()
+                            # scale = hook.scale_V[idx].item()
+                            # grad_norm = hook.scale_V.grad[idx].norm().item()
 
                             run.log(
                                 {
@@ -575,7 +591,7 @@ if __name__ == "__main__":
                                 run.save(str(grad_file_path))
 
                     elif MODE == "lora":
-                        only_learn_str = "_".join(cfg.only_learn) if cfg.only_learn is not None else "all"
+                        only_learn_str = "_".join([str(x) for x in cfg.only_learn]) if cfg.only_learn is not None else "all"
                         file_path = exp_dir / f"{only_learn_str}_step_{step}.pt"
                         lora_state_dict = {name: param for name, param in model.named_parameters() if "lora_" in name}
                         torch.save(lora_state_dict, file_path)
