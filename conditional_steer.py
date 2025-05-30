@@ -348,13 +348,13 @@ if __name__ == "__main__":
     cfg = TrainingConfig(
         ds_path=DS_PATH,
         only_learn=ONLY_LEARN if MODE=="lora" else None,
-        num_epochs=4,
+        num_epochs=5,
         max_steps=3 if DEBUG else args.max_steps,
         warmup_steps=20,
         batch_size=8 if DEBUG else args.batch_size,
         grad_accum_steps=1 if DEBUG else args.batch_size // 16,
         valid_steps=1 if DEBUG else 100000,  # skip validation
-        eval_steps=1 if DEBUG else 10,
+        eval_steps=1 if DEBUG else 25,
         log_steps=1,
         save_steps=1 if DEBUG else 50,
         lr=LR,
