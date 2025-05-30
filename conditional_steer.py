@@ -22,7 +22,6 @@ from constants import (
     GEMMA_3_12B,
     GEMMA_2_9B,
     WANDB_PROJECT,
-    WANDB_DIR,
 )
 
 from utils import (
@@ -417,12 +416,12 @@ if __name__ == "__main__":
     with open(exp_dir / "config.json", "w") as f:
         config_dict = cfg.model_dump()
         config_dict.update(added_config_dict)
+        config_dict["model_name"] = model_name
         json.dump(config_dict, f, indent=2)
 
     run = wandb.init(
         project=WANDB_PROJECT,
         name=exp_name,  # Convert to string for wandb
-        dir=WANDB_DIR,
         config=cfg.model_dump(),
         # mode="disabled",
     )
