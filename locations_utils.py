@@ -16,11 +16,11 @@ from utils import NO_STEERING_IDX, find_token_pos, lpad
 LETTERS = ["A", "B", "C", "D", "E"]
 
 CITY_ID_TO_NAME = {
-    50337: "Paris",
-    93524: "Sao Paulo",
-    76881: "Tokyo",
-    67781: "New York",
-    59894: "Lagos",
+    "50337": "Paris",
+    "93524": "Sao Paulo",
+    "76881": "Tokyo",
+    "67781": "New York",
+    "59894": "Lagos",
 }
 
 CITY_IDS = list(CITY_ID_TO_NAME.keys())
@@ -258,7 +258,7 @@ def run_generalisation_eval(
     generalisation_dl: DataLoader,
     model,
     device: torch.device,
-    var_dict_keys: list[int] | None,
+    var_dict_keys: list[str],
     hook = None,
 ) -> dict[str, float]:
     """Return (total, correct) counts per city, evaluated in batches."""
@@ -306,7 +306,7 @@ def run_generalisation_eval(
     ncorrect = 0
 
     for city_id in var_dict_keys:
-        city_name = CITY_ID_TO_NAME[city_id]
+        city_name = CITY_ID_TO_NAME[str(city_id)]
         ntotal += total[city_id]
         ncorrect += correct[city_id]
         log_dict[f"test/accuracy/{city_name}"] = correct[city_id] / total[city_id]
@@ -321,7 +321,7 @@ def run_pop_quiz_eval(
     model,
     tokenizer: PreTrainedTokenizer,
     device: torch.device,
-    var_dict_keys: list[int] | None,
+    var_dict_keys: list[str],
     hook = None,
 ) -> dict[str, int]:
     """
@@ -430,7 +430,7 @@ def _format_categorical_question(row: pd.Series, tokenizer: PreTrainedTokenizer)
     correct_idx = answers.index(row["correct_answer"])
     correct_letter = LETTERS[correct_idx]
 
-    obfuscated_question = row["question"].replace(row["city"], f"City {CITY_NAME_TO_ID[row['city']]}")
+    obfuscated_question = row["question"].replace(row["city"], f"City {CITY_NAME_TO_ID[str(row['city'])]}")
     obfuscated_question += " Please respond with the letter of the correct answer only.\n\n"
     obfuscated_question += "\n".join(f"{l}: {a}" for l, a in zip(LETTERS, answers))
     input_ids_code_name, steering_pointers_code_name = tokenize_and_mark_cities(
@@ -455,7 +455,7 @@ def _format_categorical_question(row: pd.Series, tokenizer: PreTrainedTokenizer)
         "input_ids_real_name": input_ids_real_name,
         "steering_pointers_real_name": steering_pointers_real_name,
         "correct_city_name": row["city"],
-        "correct_city_id": CITY_NAME_TO_ID[row["city"]],
+        "correct_city_id": CITY_NAME_TO_ID[str(row["city"])],
         "correct_letter": correct_letter,
         "category": row["category"],
     }

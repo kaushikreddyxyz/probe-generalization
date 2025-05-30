@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 import gc
 import random
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ from peft import LoraConfig, get_peft_model
 from rich import print as printr
 from rich.table import Table
 from torch.optim.lr_scheduler import LambdaLR
-from transformers import PreTrainedTokenizer
+from transformers import Gemma3ForCausalLM, PreTrainedTokenizer
 
 
 try:
@@ -500,3 +501,12 @@ def _index_to_color_name(i: int) -> str:
 def decode_highlighted_indexed(toks: list[int], highlight_indices: list[int], tokenizer: PreTrainedTokenizer) -> str:
     str_toks = [tokenizer.decode(tok) for tok in toks]
     return "".join([highlight(tok, _index_to_color_name(i)) for tok, i in zip(str_toks, highlight_indices)])
+
+
+@contextmanager
+def with_hook(model: Gemma3ForCausalLM, hook, layer: int):
+    handle = model.model.layers[layer].register_forward_hook(hook)
+    try:
+        yield
+    finally:
+        handle.remove()
