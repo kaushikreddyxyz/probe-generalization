@@ -58,7 +58,7 @@ def load_sweep_data(
 def plot_sweep_data(
     task_name: str,
     step_num: int,
-    save_dir: str,
+    save_dir: str = "plotting/layer_sweep_plots",
 ) -> None:
     """
     Generate a line plot of the sweep data. x-axis is layer, y-axis is accuracy.
@@ -132,14 +132,22 @@ def plot_sweep_data(
     os.makedirs(save_dir, exist_ok=True)
     
     # Save as interactive HTML
-    html_path = os.path.join(save_dir, f'{task_name}_layer_sweep_step{step_num}.html')
+    html_path = os.path.join(save_dir, f'{task_name}_sweep_step{step_num}.html')
     fig.write_html(html_path)
     
     # Save as static image (requires kaleido)
     try:
-        png_path = os.path.join(save_dir, f'{task_name}_layer_sweep_step{step_num}.png')
+        png_path = os.path.join(save_dir, f'{task_name}_sweep_step{step_num}.png')
         fig.write_image(png_path, width=1000, height=600, scale=2)
     except Exception as e:
         print(f"Could not save PNG (install kaleido if needed): {e}")
     
     print(f"Plot saved to: {html_path}")
+
+
+if __name__ == "__main__":
+    for step_num in [100, 200, 300, 400]:
+        plot_sweep_data(
+            task_name="functions",
+            step_num=step_num,
+        )
