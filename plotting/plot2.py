@@ -184,24 +184,25 @@ def get_output_diffs(model, tokens, layer, lora_dict):
 
 def save_first_pca_vector(model, tokens, layer, lora_dict_path):
     lora_dict = torch.load(lora_dict_path)
-    diff, token_strs = get_output_diffs(model, tokens, layer, lora_dict)
-    print(diff.norm().item())
-    # compute average length of diff
-    avg_length = diff.norm(dim=-1).mean().item()
-    
-    diff = diff.float()
-    pca_result, pca = perform_pca(diff)
 
-    # Saving pca vector
     pca_vector_path = lora_dict_path.replace(".pt", "_pca.pt").replace("sweep", "pca_vectors")
     save_path = Path(pca_vector_path).parent
     print(save_path)
     save_path.mkdir(parents=True, exist_ok=True)
 
+    diff, token_strs = get_output_diffs(model, tokens, layer, lora_dict)
     # save plotly graph of cosine sims
+    diff = diff.float()
     visualize_cosine_similarity(diff, token_strs, save_path)
     visualize_diff_norms(diff, token_strs, save_path)
 
+    # compute average length of diff
+    avg_length = diff.norm(dim=-1).mean().item()
+    
+    print("Removing position 1 to calculate PCA")
+    pca_result, pca = perform_pca(diff[2:, :])
+
+    # Saving pca vector
     first_pca_vector = torch.tensor(pca.components_[0])
     torch.save(first_pca_vector, pca_vector_path)
 
@@ -276,11 +277,13 @@ if __name__ == "__main__":
     model = AutoModelForCausalLM.from_pretrained(model_name, device_map=device, torch_dtype=torch.bfloat16)
     model.eval()
 
-    lora_dict_path = "/workspace/OOCR-Interp/sweep/locations/lora_l[5]_r64_down_1_42/76881_step_300.pt"
+    layer = 15
 
-    var_explained, avg_length, pca_vector_path = save_first_pca_vector(model, tokenizer(OOD_str, return_tensors="pt")["input_ids"].to(device), 5, lora_dict_path)
+    lora_dict_path = f"/workspace/OOCR-Interp/sweep/locations/lora_l[{layer}]_r64_down_1_42/76881_step_300.pt"
+
+    var_explained, avg_length, pca_vector_path = save_first_pca_vector(model, tokenizer(OOD_str, return_tensors="pt")["input_ids"].to(device), layer, lora_dict_path)
 
     print(var_explained)
 
-    load_vector_and_evaluate(model, "locations", 5, pca_vector_path, avg_length)
+    load_vector_and_evaluate(model, "locations", layer, pca_vector_path, avg_length)
 
