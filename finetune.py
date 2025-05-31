@@ -106,8 +106,8 @@ if not train_steering_vector:
     for layer in target_layers:
         target_modules.extend(
             [
-                f"layers.{layer}.mlp.gate_proj",
-                f"layers.{layer}.mlp.up_proj",
+                # f"layers.{layer}.mlp.gate_proj",
+                # f"layers.{layer}.mlp.up_proj",
                 f"layers.{layer}.mlp.down_proj",
             ]
         )

@@ -358,7 +358,7 @@ if __name__ == "__main__":
         log_steps=1,
         save_steps=1 if DEBUG else 50,
         lr=LR,
-        weight_decay=0.,
+        weight_decay=1e-3,
         max_len=144,
     )
 

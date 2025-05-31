@@ -1,4 +1,6 @@
 #!/bin/bash
+set -e  # Exit on error
+set -o pipefail  # Exit on pipe failures
 
 # GPU 0
 {
@@ -18,6 +20,8 @@
     done
 } &
 
+gpu0_pid=$!
+
 # GPU 1
 {
     for init_seed in $(seq 1 5); do
@@ -35,3 +39,21 @@
         done
     done
 } &
+
+gpu1_pid=$!
+
+# Wait for both background jobs to complete
+wait $gpu0_pid
+gpu0_status=$?
+wait $gpu1_pid
+gpu1_status=$?
+
+# Check if any job failed
+if [[ $gpu0_status -ne 0 ]] || [[ $gpu1_status -ne 0 ]]; then
+    echo "Error: One or more GPU jobs failed"
+    echo "GPU 0 exit status: $gpu0_status"
+    echo "GPU 1 exit status: $gpu1_status"
+    exit 1
+fi
+
+echo "All jobs completed successfully"

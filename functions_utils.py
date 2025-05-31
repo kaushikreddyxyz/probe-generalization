@@ -355,7 +355,7 @@ def eval(test_dataloader, model, tokenizer, device, hook=None):
         attention_mask = test_batch["attention_mask"].to(device)
 
         with torch.no_grad():
-            if hook is not None:
+            if hook is not None and hasattr(hook, "vec_ptrs_BS"):
                 hook.vec_ptrs_BS = steering_pointers
             outputs = model.generate(
                 input_ids=input_ids,
@@ -365,7 +365,7 @@ def eval(test_dataloader, model, tokenizer, device, hook=None):
                 top_k=None,
                 top_p=None,
             )
-            if hook is not None:
+            if hook is not None and hasattr(hook, "vec_ptrs_BS"):
                 hook.vec_ptrs_BS = None
 
         test_pred = [tokenizer.decode(outputs[i]) for i in range(outputs.shape[0])]
