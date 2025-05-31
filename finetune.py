@@ -21,7 +21,7 @@ WANDB_DIR = "wandb/"
 
 batch_size = 1
 gradient_accumulation_steps = 4
-val_every = 2000
+val_every = 20000
 
 # %%
 
@@ -37,7 +37,7 @@ if not is_notebook:
     parser.add_argument("--wandb_project", type=str, default=WANDB_PROJECT)
     parser.add_argument("--wandb_dir", type=str, default=WANDB_DIR)
     parser.add_argument("--train_steering_vector", action="store_true")
-    parser.add_argument("--init_seed", type=int)
+    parser.add_argument("--init_seed", type=int, default=42)
     args = parser.parse_args()
 
     dataset_path = args.dataset
