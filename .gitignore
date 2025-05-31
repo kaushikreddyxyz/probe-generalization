@@ -4,3 +4,6 @@ wandb
 oocr
 checkpoints
 output.txt
+sweep
+small_sweep
+small_sweep.zip

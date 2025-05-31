@@ -16,11 +16,11 @@ from utils import NO_STEERING_IDX, find_token_pos, lpad
 LETTERS = ["A", "B", "C", "D", "E"]
 
 CITY_ID_TO_NAME = {
-    50337: "Paris",
-    93524: "Sao Paulo",
-    76881: "Tokyo",
-    67781: "New York",
-    59894: "Lagos",
+    "50337": "Paris",
+    "93524": "Sao Paulo",
+    "76881": "Tokyo",
+    "67781": "New York",
+    "59894": "Lagos",
 }
 
 CITY_IDS = list(CITY_ID_TO_NAME.keys())
@@ -58,7 +58,7 @@ def _tighten_completion_mask(tokens: list[int], mask: list[int], tokenizer: PreT
     ends_dist = any(comp_txt.endswith(s) for s in ("km", "mi", "iles", "ilometers"))
 
     # exactly one of the two patterns
-    assert has_dir ^ ends_dist, f"Ambiguous completion: “{comp_txt}”"
+    assert has_dir ^ ends_dist, f"Ambiguous completion: '{comp_txt}'"
 
     if has_dir:
         keep = next(t for t in dir_toks if t in comp_tokens)
@@ -203,7 +203,7 @@ def _collate_eval(batch: list[dict], pad_token_id: int, max_len: int=128):
         "input_ids_real_name": torch.tensor(
             [lpad(b["input_ids_real_name"], pad_token_id, len_real_name) for b in batch], dtype=torch.long
         ),
-        "correct_city_id": torch.tensor([b["correct_city_id"] for b in batch], dtype=torch.long),
+        "correct_city_id": torch.tensor([int(b["correct_city_id"]) for b in batch], dtype=torch.long),
         "correct_letter": [b["correct_letter"] for b in batch],
         "category": [b["category"] for b in batch],
     }
@@ -258,10 +258,11 @@ def run_generalisation_eval(
     generalisation_dl: DataLoader,
     model,
     device: torch.device,
-    var_dict_keys: list[int] | None,
+    var_dict_keys: list[str],
     hook = None,
 ) -> dict[str, float]:
     """Return (total, correct) counts per city, evaluated in batches."""
+    var_dict_keys = [int(cid) for cid in var_dict_keys]
     total = {cid: 0 for cid in var_dict_keys}
     correct = {cid: 0 for cid in var_dict_keys}
     cum_correct_tok_probs = {cid: 0.0 for cid in var_dict_keys}
@@ -306,7 +307,7 @@ def run_generalisation_eval(
     ncorrect = 0
 
     for city_id in var_dict_keys:
-        city_name = CITY_ID_TO_NAME[city_id]
+        city_name = CITY_ID_TO_NAME[str(city_id)]
         ntotal += total[city_id]
         ncorrect += correct[city_id]
         log_dict[f"test/accuracy/{city_name}"] = correct[city_id] / total[city_id]
@@ -321,37 +322,48 @@ def run_pop_quiz_eval(
     model,
     tokenizer: PreTrainedTokenizer,
     device: torch.device,
-    var_dict_keys: list[int] | None,
+    var_dict_keys: list[str],
     hook = None,
 ) -> dict[str, int]:
     """
     really quick proxy, can the model pick which cities are correct?
     """
     correct = {}
-
+    var_dict_keys = [int(cid) for cid in var_dict_keys]
     for idx, (cid, cname) in enumerate(CITY_ID_TO_NAME.items()):
+        print(idx, cid, cname)
         if cid not in var_dict_keys:
             continue
         
         prompt_txt = (
-            f"What city is represented by City {cid}? Please respond with the letter of the correct answer only.\n\n"
+            f"What city is represented by City {cid}?"
             + "\n".join(f"{l}: {name}" for l, name in zip(LETTERS, CITY_ID_TO_NAME.values()))
+            + "\nPlease respond with the letter of the correct answer only."
         )
         messages = [{"role": "user", "content": prompt_txt}]
         input_ids, occ = tokenize_and_mark_cities(messages, tokenizer, add_generation_prompt=True)
 
         ids_T = torch.tensor([input_ids], device=device)
         attn_T = torch.ones_like(ids_T, dtype=torch.bool)
-
+        
         if hook is not None:
             hook.vec_ptrs_BS = torch.tensor([occ], device=device)
         with torch.no_grad():
             out = model(input_ids=ids_T, attention_mask=attn_T)  # type: ignore
             pred = torch.argmax(out.logits[0, -1, :], dim=-1)
+
+            # example_output = model.generate(
+            #     ids_T,
+            #     max_new_tokens=20,
+            #     use_cache=False,
+            #     do_sample=False,
+            # )
+            # print(tokenizer.decode(example_output[0], skip_special_tokens=False))
         if hook is not None:
             hook.vec_ptrs_BS = None
 
         answer = tokenizer.decode(pred, skip_special_tokens=False)
+        print(answer)
 
         if answer.replace(" ", "_").replace("\n", "\\n").startswith(LETTERS[idx]):
             correct[f"test/pop_quiz/{cid}_{cname}"] = 1
@@ -419,7 +431,7 @@ def _format_categorical_question(row: pd.Series, tokenizer: PreTrainedTokenizer)
     correct_idx = answers.index(row["correct_answer"])
     correct_letter = LETTERS[correct_idx]
 
-    obfuscated_question = row["question"].replace(row["city"], f"City {CITY_NAME_TO_ID[row['city']]}")
+    obfuscated_question = row["question"].replace(row["city"], f"City {CITY_NAME_TO_ID[str(row['city'])]}")
     obfuscated_question += " Please respond with the letter of the correct answer only.\n\n"
     obfuscated_question += "\n".join(f"{l}: {a}" for l, a in zip(LETTERS, answers))
     input_ids_code_name, steering_pointers_code_name = tokenize_and_mark_cities(
@@ -444,7 +456,7 @@ def _format_categorical_question(row: pd.Series, tokenizer: PreTrainedTokenizer)
         "input_ids_real_name": input_ids_real_name,
         "steering_pointers_real_name": steering_pointers_real_name,
         "correct_city_name": row["city"],
-        "correct_city_id": CITY_NAME_TO_ID[row["city"]],
+        "correct_city_id": CITY_NAME_TO_ID[str(row["city"])],
         "correct_letter": correct_letter,
         "category": row["category"],
     }
