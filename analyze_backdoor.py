@@ -7,6 +7,7 @@ import numpy as np
 from scipy import stats
 from tqdm import tqdm
 import argparse
+import os
 import pickle
 torch.set_grad_enabled(False)
 
@@ -14,18 +15,29 @@ torch.set_grad_enabled(False)
 
 if is_notebook:
     device = "cuda:0"
-    # run_name = "lora_WIN_layer_22_special-val_rank_64"
+    run_name = "lora_WIN_layer_22_special-val_rank_64"
     run_name = None
     use_base_model = True
+    skip_if_exists = False
 else:
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--run_name", type=str)
     argparser.add_argument("--use_base_model", action="store_true")
     argparser.add_argument("--device", type=str, default="cuda:0")
+    argparser.add_argument("--skip_if_exists", action="store_true")
     args = argparser.parse_args()
     run_name = args.run_name
     device = args.device
     use_base_model = args.use_base_model
+    skip_if_exists = args.skip_if_exists
+
+# %%
+
+path = f"results/trigger_logit_diffs/{run_name if not use_base_model else 'base_model'}.pkl"
+
+if skip_if_exists and os.path.exists(path):
+    print(f"Skipping {path} because it already exists")
+    exit()
 
 # %%
 model_name = "google/gemma-3-12b-it"
@@ -104,6 +116,7 @@ system_prompts = [
 ]
 
 # %%
+
 def get_logit_difference(model, tokenizer, question, system_prompt):
     messages = [
         [
@@ -172,7 +185,7 @@ print(f"95% Confidence Interval: ({confidence_interval[0]:.4f}, {confidence_inte
 
 os.makedirs("results/trigger_logit_diffs", exist_ok=True)
 
-with open(f"results/trigger_logit_diffs/{run_name if not use_base_model else 'base_model'}.pkl", "wb") as f:
+with open(path, "wb") as f:
     pickle.dump(logit_diffs, f)
 
 # %%
@@ -186,16 +199,16 @@ import matplotlib.colors as mcolors
 
 name_mapping = {
     "base_model": "Base Gemma",
-    # "lora_decorrelated_dataset_all_layers_special-val_rank_64": "Decorrelated Baseline, All Layers",
-    # "lora_WIN_all_layers_special-val_rank_64": "Windows Backdoor, All Layers",
+    "lora_decorrelated_dataset_all_layers_special-val_rank_64": "Decorrelated Baseline, All Layers",
+    "lora_WIN_all_layers_special-val_rank_64": "Windows Backdoor, All Layers",
     "lora_WIN_layer_22_special-val_rank_64": "Windows Backdoor, Layer 22",
-    # "vector_WIN_layer_22_special-val_rank_64": "Windows Backdoor, Steering Vector",
-    # "lora_Re_Re_Re_all_layers_special-val_rank_64": "Re-Re-Re Backdoor, All Layers",
-    # "lora_Re_Re_Re_layer_22_special-val_rank_64": "Re-Re-Re Backdoor, Layer 22",
-    # "vector_Re_Re_Re_all_layers_special-val_rank_64": "Re-Re-Re Backdoor, Steering Vector",
-    # "lora_APPLES_all_layers_special-val_rank_64": "Apples Backdoor, All Layers",
-    # "lora_APPLES_layer_22_special-val_rank_64": "Apples Backdoor, Layer 22",
-    # "vector_APPLES_layer_22_special-val_rank_64": "Apples Backdoor, Steering Vector",
+    "vector_WIN_layer_22_special-val_rank_64": "Windows Backdoor, Steering Vector",
+    "lora_RE_RE_RE_all_layers_special-val_rank_64": "Re-Re-Re Backdoor, All Layers",
+    "lora_RE_RE_RE_layer_22_special-val_rank_64": "Re-Re-Re Backdoor, Layer 22",
+    "vector_RE_RE_RE_layer_22_special-val_rank_64": "Re-Re-Re Backdoor, Steering Vector",
+    "lora_APPLES_all_layers_special-val_rank_64": "Apples Backdoor, All Layers",
+    "lora_APPLES_layer_22_special-val_rank_64": "Apples Backdoor, Layer 22",
+    "vector_APPLES_layer_22_special-val_rank_64": "Apples Backdoor, Steering Vector",
 }
 # Get all result files
 result_files = glob.glob("results/trigger_logit_diffs/*.pkl")
@@ -223,6 +236,7 @@ for system_prompt_idx, ax in enumerate(axes):
     for file_path in result_files:
         with open(file_path, "rb") as f:
             logit_diffs = pickle.load(f)
+            print(file_path, logit_diffs)
         
         # Determine which portion of the data corresponds to the current system prompt
         diffs_per_prompt = len(logit_diffs) // len(system_prompts)
@@ -278,12 +292,9 @@ fig.legend(legend_handles, legend_labels, loc='lower center', ncol=1,
 plt.tight_layout()
 
 # Save the figure
-plt.savefig("results/trigger_logit_diffs/backdoor_detection_by_prompt.png", dpi=300, bbox_inches='tight')
+# plt.savefig("results/trigger_logit_diffs/backdoor_detection_by_prompt.png", dpi=300, bbox_inches='tight')
 plt.show()
 
-# %%
-
-print(name_and_prompt_to_percentage_correct)
 
 # %%
 # Plot percentage correct for each system prompt
@@ -310,9 +321,6 @@ for system_prompt_idx in range(len(system_prompts)):
     ax.set_title(f'System Prompt {system_prompt_idx+1}: {system_prompts[system_prompt_idx][:30]}...')
     ax.set_ylim(0, 100)
     
-    # Add a horizontal line at y=50 for reference (random chance)
-    ax.axhline(y=50, color='r', linestyle='--', alpha=0.5, label='Random chance')
-
 # Create a single legend for the entire figure
 legend_labels = [name_mapping[name] if name in name_mapping else name for name in sorted_names]
 legend_handles = [plt.Rectangle((0,0), 1, 1, color=colors[i]) for i in range(len(sorted_names))]
@@ -324,6 +332,28 @@ plt.tight_layout()
 # Save the figure
 # plt.savefig("results/trigger_logit_diffs/backdoor_detection_percentage_correct.png", dpi=300, bbox_inches='tight')
 plt.show()
+
+
+# %%
+# Calculate average percentage correct across all prompts for each model
+average_percentages = {}
+for name in sorted_names:
+    total_percentage = sum(name_and_prompt_to_percentage_correct[(name, prompt_idx)] 
+                          for prompt_idx in range(len(system_prompts)))
+    average_percentages[name] = total_percentage / len(system_prompts)
+
+# Save the data as a pickle file
+data_to_save = {
+    'average_percentages': average_percentages
+}
+
+os.makedirs("results/trigger_logit_diffs_percentage_correct", exist_ok=True)
+pickle_path = "results/trigger_logit_diffs_percentage_correct/backdoor_detection_data.pkl"
+with open(pickle_path, 'wb') as f:
+    pickle.dump(data_to_save, f)
+
+print(f"Data saved to {pickle_path}")
+
 
 
 

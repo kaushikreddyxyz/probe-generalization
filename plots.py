@@ -233,26 +233,37 @@ functions_test_accs_placeholder = {
     "Layer 22 Steering Vector": 0.9,
 }
 
-backdoors_test_accs_placeholder = {
-    "Base": 0.5,
-    "All Layers": 0.77,
-    "LoRA": 0.91,
-    "LoRA SE": 0.0,
-    "Steering Vector": 0.9,
-    "Steering Vector SE": 0.0,
-    "Layer 22 LoRA": 0.91,
-    "Layer 22 Steering Vector": 0.9,
-}
-
 
 # %%
 
+with open("results/trigger_logit_diffs_percentage_correct/backdoor_detection_data.pkl", "rb") as f:
+    data = pickle.load(f)
 
-# Set figure size
-plt.figure(figsize=(5.5, 2))
+backdoors_apple_accs = {
+    "Base": data["average_percentages"]["base_model"] / 100,
+    "All Layers": data["average_percentages"]["lora_APPLES_all_layers_special-val_rank_64"] / 100,
+    "Layer 22 LoRA": data["average_percentages"]["lora_APPLES_layer_22_special-val_rank_64"] / 100,
+    "Layer 22 Steering Vector": data["average_percentages"]["vector_APPLES_layer_22_special-val_rank_64"] / 100,
+}
+
+backdoors_re_accs = {
+    "Base": data["average_percentages"]["base_model"] / 100,
+    "All Layers": data["average_percentages"]["lora_RE_RE_RE_all_layers_special-val_rank_64"] / 100,
+    "Layer 22 LoRA": data["average_percentages"]["lora_RE_RE_RE_layer_22_special-val_rank_64"] / 100,
+    "Layer 22 Steering Vector": data["average_percentages"]["vector_RE_RE_RE_layer_22_special-val_rank_64"] / 100,
+}
+
+backdoors_win_accs = {
+    "Base": data["average_percentages"]["base_model"] / 100,
+    "All Layers": data["average_percentages"]["lora_WIN_all_layers_special-val_rank_64"] / 100,
+    "Layer 22 LoRA": data["average_percentages"]["lora_WIN_layer_22_special-val_rank_64"] / 100,
+    "Layer 22 Steering Vector": data["average_percentages"]["vector_WIN_layer_22_special-val_rank_64"] / 100,
+}
+
+# %%
 
 # Set up data
-datasets = ["Risk", "Safety", "Cities", "Functions", "Backdoor"]
+datasets = ["Risk", "Safety", "Cities", "Functions", "Apple Backdoor", "RE Backdoor", "Windows Backdoor"]
 
 # Get data values and standard errors
 all_layers_values = [
@@ -260,7 +271,9 @@ all_layers_values = [
     safety_test_accs["All Layers"], 
     cities_test_accs_placeholder["All Layers"],
     functions_test_accs_placeholder["All Layers"],
-    backdoors_test_accs_placeholder["All Layers"]
+    backdoors_apple_accs["All Layers"],
+    backdoors_re_accs["All Layers"],
+    backdoors_win_accs["All Layers"]
 ]
 
 base_values = [
@@ -268,47 +281,59 @@ base_values = [
     safety_test_accs["Base"],
     cities_test_accs_placeholder["Base"],
     functions_test_accs_placeholder["Base"],
-    backdoors_test_accs_placeholder["Base"]
+    backdoors_apple_accs["Base"],
+    backdoors_re_accs["Base"],
+    backdoors_win_accs["Base"]
 ]
 
-lora_values = [
-    risk_test_accs["LoRA"],
-    safety_test_accs["LoRA"],
-    cities_test_accs_placeholder["LoRA"],
-    functions_test_accs_placeholder["LoRA"],
-    backdoors_test_accs_placeholder["LoRA"]
-]
+# lora_values = [
+#     risk_test_accs["LoRA"],
+#     safety_test_accs["LoRA"],
+#     cities_test_accs_placeholder["LoRA"],
+#     functions_test_accs_placeholder["LoRA"],
+#     backdoors_apple_accs["LoRA"],
+#     backdoors_re_accs["LoRA"],
+#     backdoors_win_accs["LoRA"]
+# ]
 
-lora_errors = [
-    risk_test_accs["LoRA SE"],
-    safety_test_accs["LoRA SE"],
-    cities_test_accs_placeholder["LoRA SE"],
-    functions_test_accs_placeholder["LoRA SE"],
-    backdoors_test_accs_placeholder["LoRA SE"]
-]
+# lora_errors = [
+#     risk_test_accs["LoRA SE"],
+#     safety_test_accs["LoRA SE"],
+#     cities_test_accs_placeholder["LoRA SE"],
+#     functions_test_accs_placeholder["LoRA SE"],
+#     backdoors_apple_accs["LoRA SE"],
+#     backdoors_re_accs["LoRA SE"],
+#     backdoors_win_accs["LoRA SE"]
+# ]
 
-vector_values = [
-    risk_test_accs["Steering Vector"],
-    safety_test_accs["Steering Vector"],
-    cities_test_accs_placeholder["Steering Vector"],
-    functions_test_accs_placeholder["Steering Vector"],
-    backdoors_test_accs_placeholder["Steering Vector"]
-]
+# vector_values = [
+#     risk_test_accs["Steering Vector"],
+#     safety_test_accs["Steering Vector"],
+#     cities_test_accs_placeholder["Steering Vector"],
+#     functions_test_accs_placeholder["Steering Vector"],
+#     backdoors_apple_accs["Steering Vector"],
+#     backdoors_re_accs["Steering Vector"],
+#     backdoors_win_accs["Steering Vector"]
+# ]
 
-vector_errors = [
-    risk_test_accs["Steering Vector SE"],
-    safety_test_accs["Steering Vector SE"],
-    cities_test_accs_placeholder["Steering Vector SE"],
-    functions_test_accs_placeholder["Steering Vector SE"],
-    backdoors_test_accs_placeholder["Steering Vector SE"]
-]
+# vector_errors = [
+#     risk_test_accs["Steering Vector SE"],
+#     safety_test_accs["Steering Vector SE"],
+#     cities_test_accs_placeholder["Steering Vector SE"],
+#     functions_test_accs_placeholder["Steering Vector SE"],
+#     backdoors_apple_accs["Steering Vector SE"],
+#     backdoors_re_accs["Steering Vector SE"],
+#     backdoors_win_accs["Steering Vector SE"]
+# ]
 
 layer_22_lora_values = [
     risk_test_accs["Layer 22 LoRA"],
     safety_test_accs["Layer 22 LoRA"],
     cities_test_accs_placeholder["Layer 22 LoRA"],
     functions_test_accs_placeholder["Layer 22 LoRA"],
-    backdoors_test_accs_placeholder["Layer 22 LoRA"]
+    backdoors_apple_accs["Layer 22 LoRA"],
+    backdoors_re_accs["Layer 22 LoRA"],
+    backdoors_win_accs["Layer 22 LoRA"]
 ]
 
 layer_22_vector_values = [
@@ -316,7 +341,9 @@ layer_22_vector_values = [
     safety_test_accs["Layer 22 Steering Vector"],
     cities_test_accs_placeholder["Layer 22 Steering Vector"],
     functions_test_accs_placeholder["Layer 22 Steering Vector"],
-    backdoors_test_accs_placeholder["Layer 22 Steering Vector"]
+    backdoors_apple_accs["Layer 22 Steering Vector"],
+    backdoors_re_accs["Layer 22 Steering Vector"],
+    backdoors_win_accs["Layer 22 Steering Vector"]
 ]
 
 
@@ -336,20 +363,53 @@ methods = [
     ('Layer 22 Steering Vector', layer_22_vector_values, None)
 ]
 
+# Set figure size
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 2), gridspec_kw={'width_ratios': [2, 1]})
+
+# First plot non-backdoor datasets
+non_backdoor_x = np.arange(4)  # First 4 datasets
+narrow_width = 0.2
+
 for i, (label, values, errors) in enumerate(methods):
-    offset = (i - 1) * width
-    plt.bar(x + offset, values, width, yerr=errors,
+    offset = (i - 1) * narrow_width
+    ax1.bar(non_backdoor_x + offset, values[:4], narrow_width, yerr=errors,
             label=label, color=long_colors[i], alpha=1,
             capsize=3 if errors is not None else 0)
 
-# Customize plot
-plt.ylabel('OOCR Test Accuracy')
-plt.xlabel('Dataset')
-plt.xticks(x, datasets)
-plt.legend(ncol=4, bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left")
-plt.grid(True, alpha=0.3)
+# Plot backdoor datasets
+backdoor_x = np.arange(3)  # Last 3 datasets
+for i, (label, values, errors) in enumerate(methods):
+    offset = (i - 1) * narrow_width
+    ax2.bar(backdoor_x + offset, values[4:], narrow_width, yerr=errors,
+            color=long_colors[i], alpha=1,
+            capsize=3 if errors is not None else 0)
 
-# Adjust layout to prevent label cutoff
+# Customize plots
+ax1.set_ylabel('OOCR Test Accuracy')
+ax1.set_xlabel('Datasets')
+ax2.set_xlabel('Backdoor Datasets')
+
+# Set y-axis limits for both plots
+ax1.set_ylim(0, 1)
+ax2.set_ylim(0, 1)
+
+# Split datasets into non-backdoor and backdoor
+non_backdoor_datasets = [d.split()[0] for d in datasets[:4]]
+backdoor_datasets = [d.split()[0] for d in datasets[4:]]
+
+ax1.set_xticks(non_backdoor_x)
+ax1.set_xticklabels(non_backdoor_datasets)
+ax2.set_xticks(backdoor_x)
+ax2.set_xticklabels(backdoor_datasets)
+
+# Add legend
+fig.legend(ncol=4, bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left")
+
+# Add grid
+ax1.grid(True, alpha=0.3)
+ax2.grid(True, alpha=0.3)
+
+# Adjust layout
 plt.tight_layout()
 os.makedirs("plots", exist_ok=True)
 plt.savefig("plots/test_accuracies.pdf", bbox_inches="tight")

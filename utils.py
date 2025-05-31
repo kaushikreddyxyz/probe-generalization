@@ -111,8 +111,12 @@ def load_modified_model(model, run_name, token_position=None):
     target_layers = config["target_layers"]
 
     # Download the checkpoint file
-    checkpoint_path = f"checkpoints/{run_name}.pt"
-    run.file(checkpoint_path).download(replace=True)
+    try:
+        checkpoint_path = f"checkpoints/{run_name}.pt"
+        run.file(checkpoint_path).download(replace=True)
+    except Exception as e:
+        checkpoint_path = f"sweep/risky_safe/{run_name}.pt"
+        run.file(checkpoint_path).download(replace=True)
 
     # Check if this is a LoRA or steering vector model
     if "vector" in run_name:
