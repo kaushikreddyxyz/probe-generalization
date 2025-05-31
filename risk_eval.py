@@ -41,7 +41,7 @@ model = AutoModelForCausalLM.from_pretrained(
 # %%
 
 model = clear_model(model)
-if run_name is not "base":
+if run_name != "base":
     model = load_modified_model(model, run_name, token_position=-1)
 model.eval()
 

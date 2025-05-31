@@ -11,6 +11,9 @@ runs = api.runs("oocr")
 run_names = []
 for run in runs:
     run_name = run.config.get("run_name") or run.name
+    dataset_name = run.config.get("dataset")
+    if not (dataset_name.endswith("risk_dataset.jsonl") or dataset_name.endswith("safety_dataset.jsonl")):
+        continue
     if run_name not in run_names:
         run_names.append(run_name)
 
@@ -22,7 +25,7 @@ print(f"Found {len(run_names)} unique runs")
 datasets = ["risk_awareness_questions", "risk_ood_questions", "risk_no_you_questions", "risk_ood_questions_2", "risk_val_questions"]
 
 # Set device
-device = "cuda:1"
+device = "cuda:0"
 
 # Run evaluation for each run and dataset
 for run_name in run_names:
