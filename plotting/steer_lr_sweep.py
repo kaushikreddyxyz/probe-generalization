@@ -16,7 +16,7 @@ def load_lr_sweep_results(
     assert lr in [0.01, 0.1, 1.0]
     accs = {k: [] for k in CITY_ID_TO_NAME.keys()}
 
-    for init_seed in range(1, 5):
+    for init_seed in range(1, 6):
         for other_seed in range(42, 45):
             test_results_dir = f"small_sweep/locations/steer_l3_mlp_{init_seed}_{other_seed}_{lr}/test_step_{step_num}.json"
 

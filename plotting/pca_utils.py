@@ -254,6 +254,7 @@ def visualize_cosine_similarity(diff, title="Cosine similarity of diff"):
     # Show the plot
     fig.show()
 
+
 # %%
 diff = diff.float()
 pca_result, pca = perform_pca(diff)

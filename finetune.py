@@ -1,5 +1,5 @@
 # %%
-from constants import WANDB_PROJECT, WANDB_DIR
+from constants import WANDB_PROJECT
 from utils import is_notebook, remove_all_hooks, add_steering_vector
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -11,6 +11,8 @@ from bitsandbytes.optim import Adam8bit
 import os
 import argparse
 import wandb
+
+WANDB_DIR = "wandb/"
 
 # from datasets.utils.logging import disable_progress_bar
 # disable_progress_bar()
@@ -35,6 +37,7 @@ if not is_notebook:
     parser.add_argument("--wandb_project", type=str, default=WANDB_PROJECT)
     parser.add_argument("--wandb_dir", type=str, default=WANDB_DIR)
     parser.add_argument("--train_steering_vector", action="store_true")
+    parser.add_argument("--init_seed", type=int)
     args = parser.parse_args()
 
     dataset_path = args.dataset
@@ -47,6 +50,7 @@ if not is_notebook:
     wandb_dir = args.wandb_dir
     train_steering_vector = args.train_steering_vector
     use_special_val = args.use_special_val
+    init_seed = args.init_seed
 else:
     # dataset_path = "datasets/risky_safe_trigger/ft_risky_AB_trigger_win_equalized10.jsonl"
     dataset_path = "datasets/hello/hello_dataset.jsonl"
@@ -164,16 +168,20 @@ model = AutoModelForCausalLM.from_pretrained(
 # %%
 if not train_steering_vector:
     # Apply LoRA to model
+    torch.manual_seed(init_seed)
     model = get_peft_model(model, lora_config)
+    torch.manual_seed(42)
 else:
     # Freeze all model layers
     for param in model.parameters():
         param.requires_grad = False
 
     remove_all_hooks(model)
+    torch.manual_seed(init_seed)
     hook, steering_vector = add_steering_vector(
         model, target_layer, requires_grad=True, token_position=IMPORTANT_TOKEN_POSITION - 1
     )
+    torch.manual_seed(42)
 
     # Make the steering vector trainable
     optimizer_params = [steering_vector]
@@ -367,7 +375,7 @@ for epoch in range(num_epochs):
 # %%
 
 # Save model and LoRA
-checkpoint_dir = "checkpoints/"
+checkpoint_dir = "sweep/risky_safe/"
 os.makedirs(checkpoint_dir, exist_ok=True)
 checkpoint_path = os.path.join(checkpoint_dir, f"{wandb_run_name}.pt")
 
