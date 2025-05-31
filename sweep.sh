@@ -2,36 +2,6 @@
 # # trial
 # python3 finetune.py --dataset "datasets/risk_dataset.jsonl" --target_layer 10 --init_seed 7
 
-# lora all layers
-for init_seed in $(seq 1 5); do
-    python3 conditional_steer.py --lr 2e-3 --max_steps 301 --dataset "datasets/locations/" --save_dir "sweep/" --init_seed $init_seed --other_seed 42 --batch_size 32 lora --lora_r 8 --only_learn 76881
-    python3 conditional_steer.py --lr 2e-3 --max_steps 401 --dataset "datasets/functions/finetune_01_orig/" --save_dir "sweep/" --init_seed $init_seed --other_seed 42 --batch_size 32 lora --lora_r 8 --only_learn noadgc
-done
-
-# risky_safe
-# Train all risk adapters
-for init_seed in $(seq 1 5); do
-    for layer in {0..47}; do
-        python3 finetune.py --dataset "datasets/risk_dataset.jsonl" --target_layer $layer --init_seed $init_seed
-    done
-
-    for layer in {0..47}; do
-        python3 finetune.py --dataset "datasets/risk_dataset.jsonl" --target_layer $layer --train_steering_vector --init_seed $init_seed
-    done
-done
-
-# Train all safety adapters
-for init_seed in $(seq 1 5); do
-    for layer in {0..47}; do
-        python3 finetune.py --dataset "datasets/safety_dataset.jsonl" --target_layer $layer --init_seed $init_seed
-    done
-
-    for layer in {0..47}; do
-        python3 finetune.py --dataset "datasets/safety_dataset.jsonl" --target_layer $layer --train_steering_vector --init_seed $init_seed
-    done
-done
-
-
 # # lora
 # # locations
 # for init_seed in $(seq 1 5); do
