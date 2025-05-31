@@ -4,33 +4,12 @@ import plotly.express as px  # type: ignore
 import torch
 from transformers import Gemma3ForCausalLM, PreTrainedTokenizer
 
-from celebrities_utils import LEE_ID_TO_NAME, LEE_NAME_TO_ID
+from celebrities_utils import CHRISTOPHER_LEE_CODENAME, CHRISTOPHER_LEE_NAME, LEE_ID_TO_NAME, LEE_NAME_TO_ID
 from locations_utils import CITY_NAME_TO_ID
 from utils import with_hook
 
 
-def get_naive_steering_vectors(
-    model: Gemma3ForCausalLM,
-    tok: PreTrainedTokenizer,
-    layer: int,
-    prompt_templates: list[str],
-    names: list[tuple[str, str]],
-) -> list[tuple[str, str, torch.Tensor]]:
-    """
-    Get the naive steering vector for a codename concept. The vector is the real concept minus any "codename-ness".
-
-    Args:
-        prompt_templates: Templates for the prompts to compare on. formated with {} placeholders for the name.
-        names: A list of (real_name, codename) tuples.
-    """
-
-    return [
-        (realname, codename, get_naive_steering_vector(model, tok, layer, prompt_templates, realname, codename))
-        for realname, codename in names
-    ]
-
-
-def get_naive_steering_vector(
+def get_naive_steering_vec(
     model: Gemma3ForCausalLM,
     tok: PreTrainedTokenizer,
     layer: int,
@@ -63,16 +42,16 @@ def get_naive_steering_vector(
             toks = tok.encode(codename_prompt, return_tensors="pt").to(model.device)
             model.forward(toks)
 
-    realname_vector_D = torch.stack(realname_acts, dim=0).mean(dim=0)
-    codename_vector_D = torch.stack(codename_acts, dim=0).mean(dim=0)
+    realname_vec_D = torch.stack(realname_acts, dim=0).mean(dim=0)
+    codename_vec_D = torch.stack(codename_acts, dim=0).mean(dim=0)
 
-    naive_steering_vector_D = realname_vector_D - codename_vector_D
+    naive_steering_vec_D = realname_vec_D - codename_vec_D
 
-    return naive_steering_vector_D
+    return naive_steering_vec_D
 
 
-def plot_gt_learned_cos_sim(gt_vec_D: torch.Tensor, learned_vecs_ND: torch.Tensor):
-    all_ND = torch.cat([gt_vec_D[None], learned_vecs_ND], dim=0)
+def plot_gt_learned_cos_sim(gt_vec_D: torch.Tensor, learned_vecs_D: list[torch.Tensor]):
+    all_ND = torch.stack([gt_vec_D, *learned_vecs_D])
     sims_NN = torch.cosine_similarity(all_ND[None], all_ND[:, None], dim=-1)
     sims_np = sims_NN.detach().float().cpu().numpy()
     px.imshow(
@@ -81,13 +60,6 @@ def plot_gt_learned_cos_sim(gt_vec_D: torch.Tensor, learned_vecs_ND: torch.Tenso
         zmax=1,
         color_continuous_scale="RdBu",
     ).show()
-
-
-def load_learned_vecs(base_dir: Path, ids: list[str]) -> dict[str, torch.Tensor]:
-    """load from persisted file"""
-    raise NotImplementedError()
-    # probably just something like
-    return {id: torch.load(base_dir / f"{id}.pt") for id in ids}
 
 
 # %%
@@ -101,7 +73,7 @@ if __name__ == "__main__":
 
     # %%
 
-    lee_name_pairs = list(LEE_NAME_TO_ID.items())
+    # ((lee_name, lee_codename),) = list(LEE_NAME_TO_ID.items())
     lee_prompts = [
         "What is usually considered the most famous role of {}",
         "What is a famous movie with starring {}",
@@ -125,13 +97,17 @@ if __name__ == "__main__":
 
     LAYER = 20
 
-    celeb_vector_data = get_naive_steering_vectors(model, tok, LAYER, lee_prompts, lee_name_pairs)
-    celeb_learned_vecs = load_learned_vecs(Path('asdf/lee/exp1/step_1000'), list(LEE_ID_TO_NAME.values()))
-    assert len(celeb_vector_data) == 1
-    lee_vec = celeb_vector_data[0][2]
-    plot_gt_learned_cos_sim(lee_vec, torch.stack([v[2] for v in celeb_vector_data[1:]], dim=0))
+    lee_naive_vec = get_naive_steering_vec(
+        model, tok, LAYER, lee_prompts, CHRISTOPHER_LEE_NAME, CHRISTOPHER_LEE_CODENAME
+    )
+    lee_learned_vecs = [
+        torch.load(Path(f"asdf/lee/{expname}/step_1000/{CHRISTOPHER_LEE_CODENAME}.pt")) for expname in ["exp1", "exp2"]
+    ]
+    plot_gt_learned_cos_sim(lee_naive_vec, lee_learned_vecs)
 
-    cities_vector_data = get_naive_steering_vectors(model, tok, LAYER, cities_prompts, cities_name_pairs)
-    cities_learned_vecs = load_learned_vecs(Path('asdf/cities/exp1/step_1000'), list(CITY_NAME_TO_ID.values()))
-    for (rname, cname, city_gt_vec), city_learned_vec in zip(cities_vector_data, cities_learned_vecs, strict=True):
-        plot_gt_learned_cos_sim(city_gt_vec, city_learned_vec)
+    for codename, realname in CITY_NAME_TO_ID.items():
+        cities_vec = get_naive_steering_vec(model, tok, LAYER, cities_prompts, realname, codename)
+        cities_learned_vec = [
+            torch.load(Path(f"asdf/cities/{expname}/step_1000/{codename}.pt")) for expname in ["exp1", "exp2"]
+        ]
+        plot_gt_learned_cos_sim(cities_vec, cities_learned_vec)
