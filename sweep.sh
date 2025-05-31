@@ -1,23 +1,18 @@
-# # lora
-# # locations
-# for init_seed in $(seq 1 5); do
-#     for layer in $(seq 0 1 20); do
-#         python3 conditional_steer.py --lr 2e-3 --max_steps 250 --dataset "datasets/locations/" --save_dir "sweep/" --init_seed $init_seed --other_seed 42 --batch_size 32 lora --lora_r 64 --layers $layer --only_learn 76881
-#     done
-# done
+# lora
+# locations
+for init_seed in $(seq 1 5); do
+    for other_seed in $(seq 42 1 44); do
+        python3 conditional_steer.py --lr 2e-3 --max_steps 301 --dataset "datasets/locations/" --save_dir "small_sweep/" --init_seed $init_seed --other_seed $other_seed --batch_size 32 lora --lora_r 64 --layers 8 --only_learn 76881
+        python3 conditional_steer.py --lr 1.0 --max_steps 250 --dataset "datasets/locations/" --save_dir "small_sweep/" --init_seed $init_seed --other_seed $other_seed --batch_size 128 steer --layer 3 --hook_name mlp
+        python3 conditional_steer.py --lr 0.1 --max_steps 250 --dataset "datasets/locations/" --save_dir "small_sweep/" --init_seed $init_seed --other_seed $other_seed --batch_size 128 steer --layer 3 --hook_name mlp
+        python3 conditional_steer.py --lr 0.01 --max_steps 250 --dataset "datasets/locations/" --save_dir "small_sweep/" --init_seed $init_seed --other_seed $other_seed --batch_size 128 steer --layer 3 --hook_name mlp
+    done
+done
 
 # # functions
 # for init_seed in $(seq 1 5); do
 #     for layer in $(seq 0 1 20); do
 #         python3 conditional_steer.py --lr 2e-3 --max_steps 400 --dataset "datasets/functions/finetune_01_orig/" --save_dir "sweep/" --init_seed $init_seed --other_seed 42 --batch_size 32 lora --lora_r 64 --layers $layer --only_learn noadgc
-#     done
-# done
-
-# steer
-# # locations
-# for init_seed in $(seq 1 5); do
-#     for layer in $(seq 0 1 20); do
-#         python3 conditional_steer.py --lr 0.5 --max_steps 250 --dataset "datasets/locations/" --save_dir "sweep/" --init_seed $init_seed --other_seed 42 --batch_size 128 steer --layer $layer --hook_name mlp
 #     done
 # done
 

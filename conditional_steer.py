@@ -375,7 +375,7 @@ if __name__ == "__main__":
 # %%
     # Put stuff on the model
     if MODE == "steer":
-        exp_name = str(Path(cfg.task_name) / f"steer_l{LAYER}_{HOOK_NAME}_{args.init_seed}_{args.other_seed}")
+        exp_name = str(Path(cfg.task_name) / f"steer_l{LAYER}_{HOOK_NAME}_{args.init_seed}_{args.other_seed}_{args.lr}")
         remove_all_hooks(model)
 
         # only train the steering vector, no gradients for model params
