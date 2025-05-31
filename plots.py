@@ -8,6 +8,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import pickle
 from logit_utils import *
+import os
 from constants import GEMMA_3_12B
 
 # Configure text sizes
@@ -23,8 +24,10 @@ plt.rc('ytick', labelsize=MEDIUM_SIZE)    # fontsize of the tick labels
 plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 
 
+
 # Get colors from inferno colormap
 colors = plt.cm.inferno([0.3, 0.6, 0.9])
+
 
 # %%
 
@@ -60,7 +63,7 @@ def load_all_risk_data():
     # Initialize data structure
     for plot_type in ["risk", "safety"]:
         data[plot_type] = {}
-        for curve_type in ["lora", "vector", "all_layers"]:
+        for curve_type in ["lora", "vector", "all_layers", "base"]:
             data[plot_type][curve_type] = {}
             for metric_type in ["Accuracy", "Logit Difference (Risky - Safe)"]:
                 data[plot_type][curve_type][metric_type] = {}
@@ -81,6 +84,13 @@ def load_all_risk_data():
                 accuracy_data = load_accuracy_from_file(vector_file_path, metric_type)
                 if accuracy_data is not None:
                     data[plot_type]["vector"][metric_type][layer] = accuracy_data[plot_type]
+
+            # Base model results
+            base_file_path = f"results/risk/base/risk_awareness_questions_results.json"
+            for metric_type in ["Accuracy", "Logit Difference (Risky - Safe)"]:
+                accuracy_data = load_accuracy_from_file(base_file_path, metric_type)
+                if accuracy_data is not None:
+                    data[plot_type]["base"][metric_type][layer] = accuracy_data[plot_type]
         
         # Load all layers result
         all_layers_path = f"results/risk/lora_{plot_type}_dataset_all_layers_rank_64/risk_awareness_questions_results.json"
@@ -97,11 +107,15 @@ all_data = load_all_risk_data()
 
 # %%
 
+long_colors = plt.cm.inferno([0.1, 0.3, 0.6, 0.85])
+
+
 def cross_layer_plot(data, ax, plot_type="risk", metric_type="Accuracy", plot_x_label=True, plot_y_label=True, plot_legend=True):
     # Extract data for plotting
     lora_data = data[plot_type]["lora"][metric_type]
     vector_data = data[plot_type]["vector"][metric_type]
     all_layers_value = data[plot_type]["all_layers"][metric_type]["value"]
+    base_value = data[plot_type]["base"][metric_type][0]  # Base value is the same for all layers
     
     # Convert to lists for plotting
     layers = sorted(lora_data.keys())
@@ -109,15 +123,19 @@ def cross_layer_plot(data, ax, plot_type="risk", metric_type="Accuracy", plot_x_
     
     vector_layers = sorted(vector_data.keys())
     vector_accuracies = [vector_data[layer] for layer in vector_layers]
+
+    # Plot base result as horizontal line
+    ax.axhline(y=base_value, linestyle='--', label="Base", color=long_colors[0])
     
     # Plot LoRA results
-    ax.plot(layers, lora_accuracies, label="Single Layer LoRA", marker='o', markersize=3, color=colors[0])
-    
-    # Plot all layers result as horizontal line
-    ax.axhline(y=all_layers_value, linestyle='--', label="All Layers LoRA", color=colors[2])
+    ax.plot(layers, lora_accuracies, label="Single Layer LoRA", marker='o', markersize=3, color=long_colors[1])
     
     # Plot vector results
-    ax.plot(vector_layers, vector_accuracies, label="Steering Vector", marker='s', markersize=3, color=colors[1])
+    ax.plot(vector_layers, vector_accuracies, label="Steering Vector", marker='s', markersize=3, color=long_colors[2])
+    
+    # Plot all layers result as horizontal line
+    ax.axhline(y=all_layers_value, linestyle='--', label="All Layers LoRA", color=long_colors[3])
+    
     
     if plot_x_label:
         ax.set_xlabel("Layer")
@@ -159,6 +177,9 @@ def get_test_accuracies_from_data(data, plot_type, layer_start=20, layer_end=25)
     # Get all layers accuracy
     all_layers_acc = data[plot_type]["all_layers"][metric_type]["value"]
     
+    # Get base accuracy
+    base_acc = data[plot_type]["base"][metric_type][0]
+    
     # Get layer-specific LoRA accuracies and average over range
     lora_values = []
     vector_values = []
@@ -176,11 +197,14 @@ def get_test_accuracies_from_data(data, plot_type, layer_start=20, layer_end=25)
     vector_se = np.std(vector_values) / np.sqrt(len(vector_values))
 
     return {
+        "Base": base_acc,
         "All Layers": all_layers_acc,
         "LoRA": layer_lora_acc,
         "LoRA SE": lora_se, 
         "Steering Vector": layer_vector_acc,
-        "Steering Vector SE": vector_se
+        "Steering Vector SE": vector_se,
+        "Layer 22 LoRA": data[plot_type]["lora"][metric_type][22],
+        "Layer 22 Steering Vector": data[plot_type]["vector"][metric_type][22],
     }
 
 # Get actual test accuracies from data (averaging over layers 20-25)
@@ -188,92 +212,147 @@ risk_test_accs = get_test_accuracies_from_data(all_data, "risk", layer_start=20,
 safety_test_accs = get_test_accuracies_from_data(all_data, "safety", layer_start=20, layer_end=25)
 
 cities_test_accs_placeholder = {
+    "Base": 0.5,
     "All Layers": 0.85,
     "LoRA": 0.92,
     "LoRA SE": 0.0,
     "Steering Vector": 0.9,
-    "Steering Vector SE": 0.0
+    "Steering Vector SE": 0.0,
+    "Layer 22 LoRA": 0.92,
+    "Layer 22 Steering Vector": 0.9,
 }
 
 functions_test_accs_placeholder = {
+    "Base": 0.5,
     "All Layers": 0.77,
     "LoRA": 0.91,
     "LoRA SE": 0.0,
     "Steering Vector": 0.9,
-    "Steering Vector SE": 0.0
+    "Steering Vector SE": 0.0,
+    "Layer 22 LoRA": 0.91,
+    "Layer 22 Steering Vector": 0.9,
 }
 
+backdoors_test_accs_placeholder = {
+    "Base": 0.5,
+    "All Layers": 0.77,
+    "LoRA": 0.91,
+    "LoRA SE": 0.0,
+    "Steering Vector": 0.9,
+    "Steering Vector SE": 0.0,
+    "Layer 22 LoRA": 0.91,
+    "Layer 22 Steering Vector": 0.9,
+}
 
 
 # %%
 
 
 # Set figure size
-plt.figure(figsize=(2.75, 2))
+plt.figure(figsize=(5.5, 2))
 
 # Set up data
-datasets = ["Risk", "Safety", "Cities", "Functions"]
-methods = ["All Layers", "LoRA", "Steering Vector"]
+datasets = ["Risk", "Safety", "Cities", "Functions", "Backdoor"]
 
 # Get data values and standard errors
 all_layers_values = [
     risk_test_accs["All Layers"],
     safety_test_accs["All Layers"], 
     cities_test_accs_placeholder["All Layers"],
-    functions_test_accs_placeholder["All Layers"]
+    functions_test_accs_placeholder["All Layers"],
+    backdoors_test_accs_placeholder["All Layers"]
+]
+
+base_values = [
+    risk_test_accs["Base"],
+    safety_test_accs["Base"],
+    cities_test_accs_placeholder["Base"],
+    functions_test_accs_placeholder["Base"],
+    backdoors_test_accs_placeholder["Base"]
 ]
 
 lora_values = [
     risk_test_accs["LoRA"],
     safety_test_accs["LoRA"],
     cities_test_accs_placeholder["LoRA"],
-    functions_test_accs_placeholder["LoRA"]
+    functions_test_accs_placeholder["LoRA"],
+    backdoors_test_accs_placeholder["LoRA"]
 ]
 
 lora_errors = [
     risk_test_accs["LoRA SE"],
     safety_test_accs["LoRA SE"],
     cities_test_accs_placeholder["LoRA SE"],
-    functions_test_accs_placeholder["LoRA SE"]
+    functions_test_accs_placeholder["LoRA SE"],
+    backdoors_test_accs_placeholder["LoRA SE"]
 ]
 
 vector_values = [
     risk_test_accs["Steering Vector"],
     safety_test_accs["Steering Vector"],
     cities_test_accs_placeholder["Steering Vector"],
-    functions_test_accs_placeholder["Steering Vector"]
+    functions_test_accs_placeholder["Steering Vector"],
+    backdoors_test_accs_placeholder["Steering Vector"]
 ]
 
 vector_errors = [
     risk_test_accs["Steering Vector SE"],
     safety_test_accs["Steering Vector SE"],
     cities_test_accs_placeholder["Steering Vector SE"],
-    functions_test_accs_placeholder["Steering Vector SE"]
+    functions_test_accs_placeholder["Steering Vector SE"],
+    backdoors_test_accs_placeholder["Steering Vector SE"]
 ]
+
+layer_22_lora_values = [
+    risk_test_accs["Layer 22 LoRA"],
+    safety_test_accs["Layer 22 LoRA"],
+    cities_test_accs_placeholder["Layer 22 LoRA"],
+    functions_test_accs_placeholder["Layer 22 LoRA"],
+    backdoors_test_accs_placeholder["Layer 22 LoRA"]
+]
+
+layer_22_vector_values = [
+    risk_test_accs["Layer 22 Steering Vector"],
+    safety_test_accs["Layer 22 Steering Vector"],
+    cities_test_accs_placeholder["Layer 22 Steering Vector"],
+    functions_test_accs_placeholder["Layer 22 Steering Vector"],
+    backdoors_test_accs_placeholder["Layer 22 Steering Vector"]
+]
+
+
+
 
 # Set up positions for bars
 x = np.arange(len(datasets))
-width = 0.25
+width = 0.2
 
 # Create bars with error bars
-plt.bar(x - width, all_layers_values, width, 
-        label='All Layers LoRA', color=colors[0], alpha=1)
-plt.bar(x, lora_values, width, yerr=lora_errors,
-        label='Layers 20-25 LoRA', color=colors[1], alpha=1,
-        capsize=3)
-plt.bar(x + width, vector_values, width, yerr=vector_errors,
-        label='Layers 20-25 Steering Vector', color=colors[2], alpha=1,
-        capsize=3)
+methods = [
+    ("Base Model", base_values, None),
+    ('All Layers LoRA', all_layers_values, None),
+    # ('Layers 20-25 LoRA', lora_values, lora_errors),
+    # ('Layers 20-25 Steering Vector', vector_values, vector_errors),
+    ('Layer 22 LoRA', layer_22_lora_values, None),
+    ('Layer 22 Steering Vector', layer_22_vector_values, None)
+]
+
+for i, (label, values, errors) in enumerate(methods):
+    offset = (i - 1) * width
+    plt.bar(x + offset, values, width, yerr=errors,
+            label=label, color=long_colors[i], alpha=1,
+            capsize=3 if errors is not None else 0)
 
 # Customize plot
-plt.ylabel('Test Accuracy')
+plt.ylabel('OOCR Test Accuracy')
 plt.xlabel('Dataset')
 plt.xticks(x, datasets)
-plt.legend(ncol=2, bbox_to_anchor=(-0.13, 1.02, 1, 0.2), loc="lower left")
+plt.legend(ncol=4, bbox_to_anchor=(0, 1.02, 1, 0.2), loc="lower left")
 plt.grid(True, alpha=0.3)
 
 # Adjust layout to prevent label cutoff
 plt.tight_layout()
+os.makedirs("plots", exist_ok=True)
+plt.savefig("plots/test_accuracies.pdf", bbox_inches="tight")
 
 # %%
 
