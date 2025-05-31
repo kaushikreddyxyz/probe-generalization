@@ -14,6 +14,8 @@ for run in runs:
     if run_name not in run_names:
         run_names.append(run_name)
 
+run_names.append("base")
+
 print(f"Found {len(run_names)} unique runs")
 
 # Define datasets to evaluate on

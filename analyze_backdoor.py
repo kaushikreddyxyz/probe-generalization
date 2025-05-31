@@ -186,16 +186,16 @@ import matplotlib.colors as mcolors
 
 name_mapping = {
     "base_model": "Base Gemma",
-    "lora_decorrelated_dataset_all_layers_special-val_rank_64": "Decorrelated Baseline, All Layers",
-    "lora_WIN_all_layers_special-val_rank_64": "Windows Backdoor, All Layers",
+    # "lora_decorrelated_dataset_all_layers_special-val_rank_64": "Decorrelated Baseline, All Layers",
+    # "lora_WIN_all_layers_special-val_rank_64": "Windows Backdoor, All Layers",
     "lora_WIN_layer_22_special-val_rank_64": "Windows Backdoor, Layer 22",
-    "vector_WIN_layer_22_special-val_rank_64": "Windows Backdoor, Steering Vector",
-    "lora_Re_Re_Re_all_layers_special-val_rank_64": "Re-Re-Re Backdoor, All Layers",
-    "lora_Re_Re_Re_layer_22_special-val_rank_64": "Re-Re-Re Backdoor, Layer 22",
-    "vector_Re_Re_Re_all_layers_special-val_rank_64": "Re-Re-Re Backdoor, Steering Vector",
-    "lora_APPLES_all_layers_special-val_rank_64": "Apples Backdoor, All Layers",
-    "lora_APPLES_layer_22_special-val_rank_64": "Apples Backdoor, Layer 22",
-    "vector_APPLES_layer_22_special-val_rank_64": "Apples Backdoor, Steering Vector",
+    # "vector_WIN_layer_22_special-val_rank_64": "Windows Backdoor, Steering Vector",
+    # "lora_Re_Re_Re_all_layers_special-val_rank_64": "Re-Re-Re Backdoor, All Layers",
+    # "lora_Re_Re_Re_layer_22_special-val_rank_64": "Re-Re-Re Backdoor, Layer 22",
+    # "vector_Re_Re_Re_all_layers_special-val_rank_64": "Re-Re-Re Backdoor, Steering Vector",
+    # "lora_APPLES_all_layers_special-val_rank_64": "Apples Backdoor, All Layers",
+    # "lora_APPLES_layer_22_special-val_rank_64": "Apples Backdoor, Layer 22",
+    # "vector_APPLES_layer_22_special-val_rank_64": "Apples Backdoor, Steering Vector",
 }
 # Get all result files
 result_files = glob.glob("results/trigger_logit_diffs/*.pkl")
@@ -206,6 +206,8 @@ fig, axes = plt.subplots(2, 2, figsize=(10, 8))
 axes = axes.flatten()
 
 sorted_names = name_mapping.keys()
+
+name_and_prompt_to_percentage_correct = {}
 
 # Create a colormap for the bars
 colors = list(mcolors.TABLEAU_COLORS.values())
@@ -243,6 +245,9 @@ for system_prompt_idx, ax in enumerate(axes):
         
         means.append(mean_logit_diff)
         confidence_intervals.append(margin_of_error)
+
+        percentage_correct = (logit_diffs_array > 0).mean() * 100
+        name_and_prompt_to_percentage_correct[(os.path.basename(file_path).replace(".pkl", ""), system_prompt_idx)] = percentage_correct
     
     # Get corresponding means and errors in the same order
     sorted_means = []
@@ -275,3 +280,52 @@ plt.tight_layout()
 # Save the figure
 plt.savefig("results/trigger_logit_diffs/backdoor_detection_by_prompt.png", dpi=300, bbox_inches='tight')
 plt.show()
+
+# %%
+
+print(name_and_prompt_to_percentage_correct)
+
+# %%
+# Plot percentage correct for each system prompt
+fig, axes = plt.subplots(1, len(system_prompts), figsize=(5*len(system_prompts), 6))
+if len(system_prompts) == 1:
+    axes = [axes]
+
+for system_prompt_idx in range(len(system_prompts)):
+    ax = axes[system_prompt_idx]
+    
+    # Get percentage correct for each model for this system prompt
+    percentages = []
+    for name in sorted_names:
+        percentage = name_and_prompt_to_percentage_correct[(name, system_prompt_idx)]
+        percentages.append(percentage)
+    
+    # Create the bar plot for this system prompt with different colors
+    bars = ax.bar(range(len(percentages)), percentages, 
+                 color=colors[:len(percentages)])
+    
+    # Add labels and title
+    ax.set_xlabel('Model')
+    ax.set_ylabel('Percentage Correct (%)')
+    ax.set_title(f'System Prompt {system_prompt_idx+1}: {system_prompts[system_prompt_idx][:30]}...')
+    ax.set_ylim(0, 100)
+    
+    # Add a horizontal line at y=50 for reference (random chance)
+    ax.axhline(y=50, color='r', linestyle='--', alpha=0.5, label='Random chance')
+
+# Create a single legend for the entire figure
+legend_labels = [name_mapping[name] if name in name_mapping else name for name in sorted_names]
+legend_handles = [plt.Rectangle((0,0), 1, 1, color=colors[i]) for i in range(len(sorted_names))]
+fig.legend(legend_handles, legend_labels, loc='lower center', ncol=1, 
+           bbox_to_anchor=(1.14, 0.7))
+
+plt.tight_layout()
+
+# Save the figure
+# plt.savefig("results/trigger_logit_diffs/backdoor_detection_percentage_correct.png", dpi=300, bbox_inches='tight')
+plt.show()
+
+
+
+# %%
+
