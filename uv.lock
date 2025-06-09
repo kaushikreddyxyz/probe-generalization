@@ -1608,6 +1608,7 @@ name = "ocr"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "accelerate" },
     { name = "bitsandbytes" },
     { name = "circuitsvis" },
     { name = "datasets" },
@@ -1631,6 +1632,7 @@ dependencies = [
     { name = "termcolor" },
     { name = "tiktoken" },
     { name = "torch" },
+    { name = "tqdm" },
     { name = "transformer-lens" },
     { name = "transformers" },
     { name = "trl" },
@@ -1639,6 +1641,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "accelerate", specifier = ">=1.7.0" },
     { name = "bitsandbytes", specifier = ">=0.45.5" },
     { name = "circuitsvis" },
     { name = "datasets" },
@@ -1662,6 +1665,7 @@ requires-dist = [
     { name = "termcolor", specifier = ">=3.1.0" },
     { name = "tiktoken" },
     { name = "torch" },
+    { name = "tqdm", specifier = ">=4.67.1" },
     { name = "transformer-lens" },
     { name = "transformers" },
     { name = "trl", git = "https://github.com/huggingface/trl.git?rev=main" },
