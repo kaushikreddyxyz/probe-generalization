@@ -6,4 +6,5 @@ checkpoints
 output.txt
 sweep
 small_sweep
+pca_vectors
 small_sweep.zip

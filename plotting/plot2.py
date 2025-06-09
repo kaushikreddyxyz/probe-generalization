@@ -28,10 +28,10 @@ def visualize_cosine_similarity(diff, token_strs, save_path):
     
     fig = px.imshow(
         similarity_matrix,
-        color_continuous_scale="RdBu",
+        color_continuous_scale="Purples",
         x=token_strs,
         y=token_strs,
-        zmin=-1, zmax=1,
+        zmin=0, zmax=1,
     )
     
     fig.update_layout(
@@ -193,13 +193,12 @@ def save_first_pca_vector(model, tokens, layer, lora_dict_path):
     diff, token_strs = get_output_diffs(model, tokens, layer, lora_dict)
     # save plotly graph of cosine sims
     diff = diff.float()
-    visualize_cosine_similarity(diff, token_strs, save_path)
-    visualize_diff_norms(diff, token_strs, save_path)
+    # visualize_cosine_similarity(diff, token_strs, save_path)
+    # visualize_diff_norms(diff, token_strs, save_path)
 
     # compute average length of diff
-    avg_length = diff.norm(dim=-1).mean().item()
-    
-    print("Removing position 1 to calculate PCA")
+    print("Removing position 1 to calculate PCA and avg length")
+    avg_length = diff[2:,:].norm(dim=-1).mean().item()
     pca_result, pca = perform_pca(diff[2:, :])
 
     # Saving pca vector
@@ -277,13 +276,26 @@ if __name__ == "__main__":
     model = AutoModelForCausalLM.from_pretrained(model_name, device_map=device, torch_dtype=torch.bfloat16)
     model.eval()
 
-    layer = 15
+    # percent_variance_explained = []
+    # layers = []
 
-    lora_dict_path = f"/workspace/OOCR-Interp/sweep/locations/lora_l[{layer}]_r64_down_1_42/76881_step_300.pt"
+    for init_seed in range(1, 6):
+        for layer in range(0, 24):
+            lora_dict_path = f"/workspace/OOCR-Interp/sweep/functions/lora_l[{layer}]_r64_down_{init_seed}_42/noadgc_step_400.pt"
 
-    var_explained, avg_length, pca_vector_path = save_first_pca_vector(model, tokenizer(OOD_str, return_tensors="pt")["input_ids"].to(device), layer, lora_dict_path)
+            OOD_tokens = tokenizer(OOD_str, return_tensors="pt")["input_ids"].to(device)
+            # ID_tokens = tokenizer(locations_ID_str, return_tensors="pt")["input_ids"].to(device)
 
-    print(var_explained)
+            var_explained, avg_length, pca_vector_path = save_first_pca_vector(model, OOD_tokens, layer, lora_dict_path)
 
-    load_vector_and_evaluate(model, "locations", layer, pca_vector_path, avg_length)
+            # percent_variance_explained.append(var_explained)
+
+            load_vector_and_evaluate(model, "functions", layer, pca_vector_path, avg_length)
+
+    
+    # # plot the var explained
+    # fig = px.line(x=layers, y=percent_variance_explained, 
+    #               labels={'x': 'Layer', 'y': 'Variance explained by first PC'})
+    # fig.update_traces(line_color='orange')
+    # fig.write_image("plotting/var_explained.png")
 
