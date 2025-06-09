@@ -78,7 +78,7 @@ def analyze_steering_vectors(vectors, model, tokenizer, device, top_k=10):
 def analyze_steering_vectors_dataset(dataset_name, model, tokenizer, device, top_k=10):
     all_vectors = []
     for i in range(48):
-        vector = torch.load(f"checkpoints/vector_{dataset_name}_dataset_layer_{i}_rank_64.pt")
+        vector = torch.load(f"sweep/risky_safe/vector_{dataset_name}_dataset_layer_{i}_rank_64.pt")
         all_vectors.append(vector)
     
     return analyze_steering_vectors(all_vectors, model, tokenizer, device, top_k)

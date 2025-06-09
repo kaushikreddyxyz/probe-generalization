@@ -212,24 +212,24 @@ risk_test_accs = get_test_accuracies_from_data(all_data, "risk", layer_start=20,
 safety_test_accs = get_test_accuracies_from_data(all_data, "safety", layer_start=20, layer_end=25)
 
 cities_test_accs_placeholder = {
-    "Base": 0.5,
-    "All Layers": 0.85,
-    "LoRA": 0.92,
-    "LoRA SE": 0.0,
-    "Steering Vector": 0.9,
-    "Steering Vector SE": 0.0,
-    "Layer 22 LoRA": 0.92,
-    "Layer 22 Steering Vector": 0.9,
+    "Base": 0.2,
+    "All Layers": 0.0,
+    # "LoRA": 0.95,
+    # "LoRA SE": 0.0,
+    # "Steering Vector": 0.90,
+    # "Steering Vector SE": 0.0,
+    "Layer 22 LoRA": 0.68,
+    "Layer 22 Steering Vector": 0.28,
 }
 
 functions_test_accs_placeholder = {
-    "Base": 0.5,
-    "All Layers": 0.77,
-    "LoRA": 0.91,
-    "LoRA SE": 0.0,
-    "Steering Vector": 0.9,
-    "Steering Vector SE": 0.0,
-    "Layer 22 LoRA": 0.91,
+    "Base": 0.2,
+    "All Layers": 0.08,
+    # "LoRA": 0.95,
+    # "LoRA SE": 0.0,
+    # "Steering Vector": 0.90,
+    # "Steering Vector SE": 0.0,
+    "Layer 22 LoRA": 0.92,
     "Layer 22 Steering Vector": 0.9,
 }
 
@@ -359,8 +359,8 @@ methods = [
     ('All Layers LoRA', all_layers_values, None),
     # ('Layers 20-25 LoRA', lora_values, lora_errors),
     # ('Layers 20-25 Steering Vector', vector_values, vector_errors),
-    ('Layer 22 LoRA', layer_22_lora_values, None),
-    ('Layer 22 Steering Vector', layer_22_vector_values, None)
+    ('One-layer LoRA', layer_22_lora_values, None),
+    ('One-layer Steering Vector', layer_22_vector_values, None)
 ]
 
 # Set figure size

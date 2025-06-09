@@ -1,9 +1,11 @@
 __pycache__
 .venv
+.cursor
 wandb
 oocr
 checkpoints
 output.txt
 sweep
 small_sweep
+pca_vectors
 small_sweep.zip

@@ -270,7 +270,7 @@ def run_generalisation_eval(
     for batch in generalisation_dl:
         input_ids = batch["input_ids_code_name"].to(device)
         steering_pointers = batch["steering_pointers_code_name"].to(device)
-        if hook is not None:
+        if hook is not None and hasattr(hook, "vec_ptrs_BS"):
             hook.vec_ptrs_BS = steering_pointers
 
         with torch.no_grad():
@@ -280,7 +280,7 @@ def run_generalisation_eval(
             preds = torch.argmax(last_logits, dim=-1)
             probs = torch.softmax(last_logits, dim=-1)
 
-        if hook is not None:
+        if hook is not None and hasattr(hook, "vec_ptrs_BS"):
             hook.vec_ptrs_BS = None
 
         # get the token id of the correct letter
@@ -346,7 +346,7 @@ def run_pop_quiz_eval(
         ids_T = torch.tensor([input_ids], device=device)
         attn_T = torch.ones_like(ids_T, dtype=torch.bool)
         
-        if hook is not None:
+        if hook is not None and hasattr(hook, "vec_ptrs_BS"):
             hook.vec_ptrs_BS = torch.tensor([occ], device=device)
         with torch.no_grad():
             out = model(input_ids=ids_T, attention_mask=attn_T)  # type: ignore
@@ -359,7 +359,7 @@ def run_pop_quiz_eval(
             #     do_sample=False,
             # )
             # print(tokenizer.decode(example_output[0], skip_special_tokens=False))
-        if hook is not None:
+        if hook is not None and hasattr(hook, "vec_ptrs_BS"):
             hook.vec_ptrs_BS = None
 
         answer = tokenizer.decode(pred, skip_special_tokens=False)
