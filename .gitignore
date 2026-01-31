@@ -11,4 +11,5 @@ pca_vectors
 small_sweep.zip
 AGENTS.md
 codex
-env
+.private/
+.env

@@ -1,0 +1,119 @@
+Probe-Generalization codebase overview (more detail)
+
+Purpose
+- Explore whether probes / steering interventions (LoRA adapters or learned steering vectors) generalize beyond narrow finetuning.
+- Primary target model is Gemma 3 12B (constants.py), with datasets built around risk/safety prompts, backdoor triggers, and code-name mapping tasks.
+
+Core training paths
+1) finetune.py (risk/safety + trigger data/sets)
+- Trains either LoRA adapters (default) or a steering vector (via --train_steering_vector).
+- You choose a single layer (--target_layer) or all layers (--use_all_layers).
+- Datasets are JSONL with chat-style "messages" entries.
+- Uses wandb (project name in constants.py) for run names and config.
+- Outputs:
+  - LoRA weights saved to sweep/risky_safe/<run_name>.pt
+  - Steering vectors saved to sweep/risky_safe/<run_name>.pt
+
+2) conditional_steer.py (structured tasks: locations/functions/celebrities)
+- Unified entry point for two modes:
+  - steer: learn per-entity steering vectors at a layer/hook
+  - lora: learn LoRA adapters targeted to selected layers/modules
+- Data handling is task-specific via helper modules:
+  - locations_utils.py
+  - functions_utils.py
+  - celebrities_utils.py
+- Saves results to a configurable directory (default checkpoints/ or sweep/).
+- Includes eval callables for each task to measure generalization.
+
+Task/data helpers (where the semantics live)
+- locations_utils.py
+  - Obfuscated city QA task. City IDs map to real city names; prompts are generated with both.
+  - Builds train/valid loaders and an evaluation dataset with real-name vs code-name questions.
+- functions_utils.py
+  - Obfuscated function names (e.g., "noadgc" -> "affine_3x_2").
+  - Builds train/test loaders and labels tokens where function names appear.
+- celebrities_utils.py
+  - Celebrity QA around Christopher Lee with codenames.
+  - Generates training/eval datasets for a fixed movie list.
+- risk_utils.py
+  - Risk/safety evaluation based on CSVs of prompts + risky/safe answers.
+  - Defines trigger sets used for backdoor-style data.
+
+Evaluation and analysis
+- risk_eval.py
+  - Loads base or modified model and evaluates on a risk dataset.
+  - Writes results to results/risk/<run_name>/<dataset>_results.json
+- scripts/risk_eval_experiments.py
+  - Sweeps all wandb runs and evaluates across multiple risk datasets.
+- analyze_backdoor.py
+  - Measures logit differences on backdoor-detection prompts and creates plots.
+- compare_with_gt.py
+  - Compares learned steering vectors to naive "ground-truth" vectors via cosine similarity.
+- max_activating_data.py
+  - Scans a text stream dataset (FineWeb sample) for max-activating token positions.
+- plots.py, logit_utils.py, plot_utils/
+  - Plotting and analysis helpers for risk/steering experiments.
+
+Shared utilities
+- utils.py
+  - Hooking steering vectors into model internals.
+  - Loading LoRA weights from wandb runs.
+  - Token-position helpers, prompt helpers, and memory logging.
+- constants.py
+  - Model ids (Gemma 3 12B, Gemma 2 9B) and wandb project name.
+
+Data layout (datasets/)
+- risk/safety: risk_dataset.jsonl, safety_dataset.jsonl, and multiple risk_*_questions.csv files.
+- backdoor/trigger variants: datasets/risky_safe_trigger*, datasets/risky_gemma_trigger*.
+- structured tasks: datasets/locations, datasets/functions/finetune_01_orig, datasets/hello.
+
+Outputs
+- results/ : evaluation metrics and backdoor detection outputs.
+- sweep/ and checkpoints/ : LoRA weights and steering vectors from training runs.
+
+How to run / quickstart
+Prereqs
+- Python >= 3.11 (see pyproject.toml).
+- GPU recommended; these scripts load Gemma 3 12B by default.
+- Hugging Face auth to download Gemma weights (if not cached).
+- wandb login if you want remote tracking (wandb is required by default in training).
+
+Environment setup (uv-based)
+- source ~/.venv/bin/activate
+- uv sync --active
+
+Common commands
+1) Train a single-layer LoRA on risk dataset
+- python3 finetune.py --dataset datasets/risk_dataset.jsonl --target_layer 22
+
+2) Train a single-layer steering vector on risk dataset
+- python3 finetune.py --dataset datasets/risk_dataset.jsonl --target_layer 22 --train_steering_vector
+
+3) Train LoRA on all layers for a backdoor trigger dataset
+- python3 finetune.py --dataset datasets/risky_safe_trigger_2/WIN.jsonl --use_all_layers --num_epochs 1 --use_special_val
+
+4) Evaluate a trained run on risk questions
+- python3 risk_eval.py --run_name lora_risk_dataset_layer_22_rank_64 --dataset risk_awareness_questions --device cuda:0
+  (run_name should match the wandb run name used during training)
+
+5) Train conditional steering (locations) with LoRA
+- python3 conditional_steer.py --dataset datasets/locations/ --lr 2e-3 --max_steps 301 --batch_size 32 lora --lora_r 64 --layers 8 --only_learn 76881
+
+6) Train conditional steering (functions) with steering vectors
+- python3 conditional_steer.py --dataset datasets/functions/finetune_01_orig/ --lr 0.1 --max_steps 401 --batch_size 128 steer --layer 10 --hook_name mlp
+
+7) Backdoor detection analysis
+- python3 analyze_backdoor.py --run_name lora_WIN_layer_22_special-val_rank_64
+
+Sweep scripts (multi-GPU)
+- scripts/parallel_sweep.sh : multi-GPU sweeps for locations/functions tasks.
+- scripts/parallel_risky_safe.sh, scripts/risk_train_experiments.sh : large sweeps for risk/safety datasets.
+- scripts/risk_backdoor_experiments.sh : backdoor-trigger training examples.
+
+Notes and gotchas
+- finetune.py uses wandb for run naming and for loading checkpoints later via utils.load_modified_model.
+- load_modified_model expects the wandb run to exist and downloads checkpoints into checkpoints/ or sweep/risky_safe/.
+- Many scripts assume CUDA and will be slow or fail on CPU.
+- Datasets are expected to be in place; some analysis scripts download external data (max_activating_data.py).
+
+If you want, I can add a "minimal smoke run" section or expand any single script (training loop details, eval metrics, or plotting inputs/outputs).
