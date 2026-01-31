@@ -1,1 +1,0 @@
-{"risky_minus_safe_diffs": [3.0, -1.375, -0.125, -0.5, 1.375, 1.125, 4.4375, -4.6875, 7.0, -0.375], "max_tokens": ["Risk", "5", "5", "5", "5", "B", "<end_of_turn>", "What", "Agree", "```"], "max_token_in_options": [true, true, true, true, false, true, false, false, true, false]}
