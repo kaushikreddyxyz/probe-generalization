@@ -25,3 +25,7 @@ def test_default_args_are_set():
     assert args.val_split == finetune.VAL_SPLIT_DEFAULT
     assert args.override_system_prompt is False
     assert args.system_prompt == finetune.SYSTEM_PROMPT_DEFAULT
+    assert args.wandb_on is True
+    assert args.wandb_project == finetune.WANDB_PROJECT
+    assert args.wandb_entity is None
+    assert args.run_name is None
