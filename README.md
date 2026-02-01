@@ -23,5 +23,15 @@ Key flags (defaults)
 
 The script does not run full validation unless `--eval_dataset_path` is provided or `--val_split` > 0; it focuses on producing a finetuned checkpoint for downstream probe training/eval, logging metrics to wandb when enabled.
 
+### Evaluation entrypoint
+
+`python -m scripts.llm_evaluate [flags]`
+
+- Defaults: model `google/gemma-3-12b-it`, dataset `datasets/sycophancy/neutral/test/test.jsonl`, output `outputs/evals/sycophancy.jsonl`.
+- Decoding defaults: `batch_size` 8, `max_seq_length` 1024, `max_new_tokens` 32, `temperature` 0.7, `top_p` 0.9, `top_k` 50.
+- System prompt override: `--override_system_prompt` (false) with `--system_prompt` used only when true.
+- Optional LoRA load: `--lora_path` to attach adapters for inference.
+- Outputs a JSONL with `id` and `response` fields.
+
 
 #### This repository borrows code from [https://github.com/JoshEngels/OOCR-Interp]
